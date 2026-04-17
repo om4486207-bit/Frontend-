@@ -716,6 +716,33 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--txt);min-h
 </div>
 
 <script>
+// =====================================================
+// 🔧 BACKEND URL — change this to your Render URL
+// =====================================================
+const API = "https://backend-67yk.onrender.com";
+
+// ── Wake-up retry helper ──────────────────────────────────────────────
+// Render free tier sleeps after 15 min. Retries up to 4 times with
+// a growing delay so a cold-start doesn't fail silently.
+async function fetchWithRetry(url, options = {}, retries = 4, delayMs = 4000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res;
+    } catch (err) {
+      console.warn(`⚠️ Attempt ${attempt}/${retries} failed for ${url}:`, err.message);
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, delayMs * attempt));
+    }
+  }
+}
+
+// Ping backend on page load so it wakes up before the user needs it
+(function pingBackend() {
+  fetch(API + '/health').catch(() => {});
+})();
+
 // ═══════════════════════ NEET / PCM / PCB SUBJECT CONFIG ═══════════════════════
 const PCM_SUBS=[
   {name:'Physics',  marks:1, neg:0, color:'var(--phy)', cls:'p', maxQ:50, icon:'⚛'},
@@ -1233,35 +1260,6 @@ function showResults(){
     secStats.push({c,w,sk,sc,neg,tot:maxScore});
     totScore+=sc; totC+=c; totW+=w; totS+=sk; totNeg+=neg;
   });const name = prompt("Enter your name:");
-
-// =====================================================
-// 🔧 CHANGE THIS to your new Render backend URL
-//    after deploying server.js to Render.
-//    Example: "https://prepxpert-api.onrender.com"
-// =====================================================
-const API = "https://backend-67yk.onrender.com";
-
-// ── Wake-up retry helper ──────────────────────────────────────────────
-// Render free tier sleeps after 15 min. This retries up to 4 times with
-// a growing delay so the first cold-start doesn't just fail silently.
-async function fetchWithRetry(url, options = {}, retries = 4, delayMs = 4000) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(url, options);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res;
-    } catch (err) {
-      console.warn(`⚠️ Attempt ${attempt}/${retries} failed for ${url}:`, err.message);
-      if (attempt === retries) throw err;
-      await new Promise(r => setTimeout(r, delayMs * attempt));
-    }
-  }
-}
-
-// Ping backend on page load so it wakes up before the user needs it
-(function pingBackend() {
-  fetch(API + '/health').catch(() => {});
-})();
 
 fetchWithRetry(`${API}/save-result`, {
   method: "POST",
