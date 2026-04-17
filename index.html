@@ -1261,20 +1261,22 @@ function showResults(){
     totScore+=sc; totC+=c; totW+=w; totS+=sk; totNeg+=neg;
   });const name = prompt("Enter your name:");
 
+  // Calculate max possible marks BEFORE saving so we can send it as total
+  const totalMarks=SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0);
+
 fetchWithRetry(`${API}/save-result`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     name: name,
     score: totScore,
-    total: totC + totW + totS,
+    total: totalMarks,
     type: curTest.stream.toUpperCase()
   })
 })
 .then(res => res.json())
 .then(data => { console.log("Saved ✅", data); })
 .catch(err => { console.error("Error saving result ❌", err); toast('⚠️ Could not save result – server may be waking up. Try again.'); });
-  const totalMarks=SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0);
   const att=totC+totW, acc=att>0?Math.round(totC/att*100):0;
 
   // Hero
