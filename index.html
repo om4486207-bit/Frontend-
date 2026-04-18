@@ -469,6 +469,7 @@ body{font-size:14.5px;letter-spacing:-.01em;}
 </head>
 <body>
 
+
 <div id="screenshot-warn">
   <div style="font-size:56px;margin-bottom:16px">🚫</div>
   <h2>Screenshot Not Allowed</h2>
@@ -819,161 +820,109 @@ body{font-size:14.5px;letter-spacing:-.01em;}
   </div>
 </div>
 
+
 <script>
-// =====================================================
-// 🔧 BACKEND URL — change this to your Render URL
-// =====================================================
+
+// ══════════════════════════════════════════════
+// 🔧 CONFIG
+// ══════════════════════════════════════════════
 const API = "https://backend-67yk.onrender.com";
 
-// ── Wake-up retry helper ──────────────────────────────────────────────
-// Render free tier sleeps after 15 min. Retries up to 4 times with
-// a growing delay so a cold-start doesn't fail silently.
-async function fetchWithRetry(url, options = {}, retries = 4, delayMs = 4000) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(url, options);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res;
-    } catch (err) {
-      console.warn(`⚠️ Attempt ${attempt}/${retries} failed for ${url}:`, err.message);
-      if (attempt === retries) throw err;
-      await new Promise(r => setTimeout(r, delayMs * attempt));
+// Wake backend on load (Render free tier sleeps)
+(function ping(){ fetch(API+'/health').catch(()=>{}); })();
+
+async function fetchWithRetry(url, options={}, retries=4, delayMs=3000){
+  for(let i=1;i<=retries;i++){
+    try{
+      const r=await fetch(url,options);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r;
+    }catch(e){
+      console.warn(`Attempt ${i}/${retries} failed:`,e.message);
+      if(i===retries) throw e;
+      await new Promise(r=>setTimeout(r,delayMs*i));
     }
   }
 }
 
-// Ping backend on page load so it wakes up before the user needs it
-(function pingBackend() {
-  fetch(API + '/health').catch(() => {});
-})();
+// ══════════════════════════════════════════════
+// SUBJECT CONFIG
+// ══════════════════════════════════════════════
+const PCM_SUBS =[{name:'Physics',  marks:1,neg:0,color:'var(--phy)',cls:'p', maxQ:50,icon:'⚛'},
+                 {name:'Chemistry',marks:1,neg:0,color:'var(--che)',cls:'c', maxQ:50,icon:'🧪'},
+                 {name:'Mathematics',marks:2,neg:0,color:'var(--mat)',cls:'m',maxQ:50,icon:'∑'}];
+const PCB_SUBS =[{name:'Physics',  marks:1,neg:0,color:'var(--phy)',cls:'p', maxQ:50,icon:'⚛'},
+                 {name:'Chemistry',marks:1,neg:0,color:'var(--che)',cls:'c', maxQ:50,icon:'🧪'},
+                 {name:'Biology',  marks:1,neg:0,color:'var(--bio)',cls:'b', maxQ:100,icon:'🧬'}];
+const NEET_SUBS=[{name:'Physics',  marks:4,neg:1,color:'var(--neet)',cls:'nb',maxQ:45,icon:'⚛'},
+                 {name:'Chemistry',marks:4,neg:1,color:'var(--neet)',cls:'nb',maxQ:45,icon:'🧪'},
+                 {name:'Biology',  marks:4,neg:1,color:'var(--neet)',cls:'nb',maxQ:90,icon:'🧬'}];
+const JEE_SUBS =[{name:'Physics',  marks:4,neg:1,color:'var(--jee)',cls:'jee',maxQ:30,numericalStart:25,icon:'⚛'},
+                 {name:'Chemistry',marks:4,neg:1,color:'var(--jee)',cls:'jee',maxQ:30,numericalStart:25,icon:'🧪'},
+                 {name:'Mathematics',marks:4,neg:1,color:'var(--jee)',cls:'jee',maxQ:30,numericalStart:25,icon:'📐'}];
 
-// ═══════════════════════ NEET / PCM / PCB SUBJECT CONFIG ═══════════════════════
-const PCM_SUBS=[
-  {name:'Physics',  marks:1, neg:0, color:'var(--phy)', cls:'p', maxQ:50, icon:'⚛'},
-  {name:'Chemistry',marks:1, neg:0, color:'var(--che)', cls:'c', maxQ:50, icon:'🧪'},
-  {name:'Mathematics',marks:2,neg:0,color:'var(--mat)',cls:'m', maxQ:50, icon:'∑'}
-];
-const PCB_SUBS=[
-  {name:'Physics',  marks:1, neg:0, color:'var(--phy)', cls:'p', maxQ:50, icon:'⚛'},
-  {name:'Chemistry',marks:1, neg:0, color:'var(--che)', cls:'c', maxQ:50, icon:'🧪'},
-  {name:'Biology',  marks:1, neg:0, color:'var(--bio)', cls:'b', maxQ:100, icon:'🧬'}
-];
-// NEET: +4 correct, -1 wrong, 0 skip
-const NEET_SUBS=[
-  {name:'Physics',  marks:4, neg:1, color:'var(--neet)', cls:'nb', maxQ:45, icon:'⚛'},
-  {name:'Chemistry',marks:4, neg:1, color:'var(--neet)', cls:'nb', maxQ:45, icon:'🧪'},
-  {name:'Biology',  marks:4, neg:1, color:'var(--neet)', cls:'nb', maxQ:90, icon:'🧬'}
-];
-// JEE: +4 MCQ correct, -1 MCQ wrong, +4 Numerical correct, 0 Numerical wrong
-// Last 5 per subject (Q26-Q30) are numerical fill-in-the-blank
-const JEE_SUBS=[
-  {name:'Physics',  marks:4, neg:1, color:'var(--jee)', cls:'jee', maxQ:30, numericalStart:25, icon:'⚛'},
-  {name:'Chemistry',marks:4, neg:1, color:'var(--jee)', cls:'jee', maxQ:30, numericalStart:25, icon:'🧪'},
-  {name:'Mathematics',marks:4,neg:1,color:'var(--jee)',cls:'jee', maxQ:30, numericalStart:25, icon:'📐'}
-];
-function getSubs(){ 
-  if(!curTest) return PCM_SUBS;
-  if(curTest.stream==='neet') return NEET_SUBS;
-  if(curTest.stream==='pcb') return PCB_SUBS;
-  if(curTest.stream==='jee') return JEE_SUBS;
+function getSubs(stream){ 
+  if(stream==='neet') return NEET_SUBS;
+  if(stream==='pcb')  return PCB_SUBS;
+  if(stream==='jee')  return JEE_SUBS;
   return PCM_SUBS;
 }
-let SUBS=PCM_SUBS;
+let SUBS = PCM_SUBS;
 
-// ═══════════════════════ STATE ═══════════════════════
-let tests=[], settings={duration:180,price:30};
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let tests=[], settings={duration:180,price:30,contact:{}};
 let curTest=null, curSec=0, curQ=0, timerInt=null, timeLeft=0, pendingPaid=null;
 let curStream='pcm';
 let currentUser=null;
+let examState={};   // { "sec-idx": chosen } — kept in memory only, never localStorage
 
-const DEFAULT_TESTS=[
-  {id:3,name:'JEE Main 2024 Mock',stream:'jee',active:true,free:true,desc:'JEE Mock — 90 Qs · 360 Marks · Last 5 Numerical/Subject',
-    qbank:{0:[
-      {q:"A body accelerates uniformly from 0 to 30 m/s in 5s. Distance covered is",opts:["75 m","150 m","100 m","50 m"],ans:0,sol:"s=ut+½at²; u=0,a=6m/s²,t=5s → s=75m",img:"",isNumerical:false},
-      {q:"Which law states F=ma?",opts:["Newton's 1st","Newton's 2nd","Newton's 3rd","Kepler's"],ans:1,sol:"Newton's second law of motion: F=ma",img:"",isNumerical:false},
-      {q:"If a train moves at 60 km/h for 2.5 hours, distance (km) is? [Numerical]",opts:["","","",""],ans:150,numericalAns:"150",sol:"D=S×T=60×2.5=150 km",img:"",isNumerical:true}
-    ],1:[
-      {q:"Hybridisation of nitrogen in NH₃ is",opts:["sp","sp²","sp³","sp³d"],ans:2,sol:"3 bond pairs + 1 lone pair → sp³",img:"",isNumerical:false},
-      {q:"Atomic number of Carbon is? [Numerical]",opts:["","","",""],ans:6,numericalAns:"6",sol:"Carbon (C) has atomic number 6",img:"",isNumerical:true}
-    ],2:[
-      {q:"∫₀² x dx =",opts:["1","2","3","4"],ans:1,sol:"[x²/2]₀² = 4/2 = 2",img:"",isNumerical:false},
-      {q:"Value of sin(90°) is? [Numerical]",opts:["","","",""],ans:1,numericalAns:"1",sol:"sin(90°) = 1",img:"",isNumerical:true}
-    ]}
-  },
-  {id:0,name:'MHT-CET 2018 PCM',stream:'pcm',active:true,free:true,desc:'Official 2018 PCM paper — 150 Qs',
-    qbank:{0:[
-      {q:"A simple pendulum of length 1m oscillates with path length 16cm. Its maximum velocity is (g=π² m/s²)",opts:["2π cm/s","4π cm/s","8π cm/s","16π cm/s"],ans:2,sol:"Amplitude a=8cm. T=2s. V_max = aω = 8×π = 8π cm/s",img:""},
-      {q:"A transistor CE amplifier: load 2KΩ, input 150Ω, ΔIB=20μA, ΔIC=1.5mA. Voltage gain is",opts:["900","1000","1100","1200"],ans:1,sol:"Av = (RL × ΔIC)/(ri × ΔIB) = (2000×1.5e-3)/(150×20e-6) = 1000",img:""},
-      {q:"Unit vector along (0.8î+bĵ+0.4k̂). b =",opts:["0.4","√0.6","0.2","√0.2"],ans:3,sol:"0.64+b²+0.16=1 → b²=0.2 → b=√0.2",img:""}
-    ],1:[
-      {q:"Metal used for galvanization of iron",opts:["Copper","Zinc","Nickel","Tin"],ans:1,sol:"Zinc oxidizes preferentially, protecting iron from corrosion",img:""},
-      {q:"Hybridisation of P in PCl₃",opts:["sp²","sp³","sp³d","sp³d²"],ans:1,sol:"3 bond pairs + 1 lone pair = sp³ hybridisation",img:""}
-    ],2:[
-      {q:"∫₀ᴷ dx/(2+18x²)=π/24. K is",opts:["3","4","1/3","1/4"],ans:2,sol:"K=1/3 (integrate using tan⁻¹ formula)",img:""},
-      {q:"Min value of f(x)=x logx",opts:["-1/e","-e","1/e","e"],ans:0,sol:"f'(x)=1+logx=0 → x=1/e. f(1/e)=-1/e",img:""}
-    ]}
-  },
-  {id:1,name:'NEET 2024 Mock',stream:'neet',active:true,free:true,desc:'NEET Mock — 180 Qs · 720 Marks · −1 Negative Marking',
-    qbank:{0:[
-      {q:"A body of mass 2 kg moves with velocity 10 m/s. Its kinetic energy is",opts:["50 J","100 J","200 J","20 J"],ans:1,sol:"KE = ½mv² = ½ × 2 × 10² = 100 J",img:""},
-      {q:"Which of the following is NOT a vector quantity?",opts:["Force","Velocity","Speed","Acceleration"],ans:2,sol:"Speed has magnitude only, no direction — it is a scalar quantity.",img:""}
-    ],1:[
-      {q:"The hybridisation of carbon in methane (CH₄) is",opts:["sp","sp²","sp³","sp³d"],ans:2,sol:"4 bond pairs, no lone pairs → sp³, tetrahedral geometry",img:""},
-      {q:"Which element has atomic number 6?",opts:["Nitrogen","Carbon","Oxygen","Boron"],ans:1,sol:"Carbon (C) has atomic number 6 and forms the basis of organic chemistry.",img:""}
-    ],2:[
-      {q:"Which organelle is called the powerhouse of the cell?",opts:["Nucleus","Ribosome","Mitochondria","Golgi body"],ans:2,sol:"Mitochondria produce ATP through cellular respiration — hence called the powerhouse.",img:""},
-      {q:"DNA replication is",opts:["Conservative","Semi-conservative","Dispersive","Non-conservative"],ans:1,sol:"Watson & Crick model: each new DNA retains one original strand — semi-conservative.",img:""}
-    ]}
-  }
-];
-
-function loadData(){
+// ══════════════════════════════════════════════
+// LOAD TESTS FROM BACKEND (metadata only — no answers)
+// ══════════════════════════════════════════════
+async function loadTests(){
   try{
-    const raw=localStorage.getItem('mhtcet_student_data')||localStorage.getItem('mhtcet_admin_data');
-    if(raw){
-      const p=JSON.parse(raw);
-      if(p.tests&&p.tests.length){
-        tests=p.tests;
-        if(p.settings) settings={...settings,...p.settings};
-        // Ensure NEET tests have stream property
-        tests.forEach(t=>{ if(!t.stream)t.stream='pcm'; if(!t.qbank)t.qbank={0:[],1:[],2:[]}; });
-        // ── SECURITY: verify unlock token against backend, not plain localStorage flag ──
-        const _tokenRec = (() => { try{ return JSON.parse(localStorage.getItem('mhtcet_unlock_token')||'{}'); }catch(e){ return {}; } })();
-        const _mobile = currentUser?.mobile || '';
-        if(_tokenRec.token && _tokenRec.mobile === _mobile){
-          // Re-verify token is still valid with backend (fire-and-forget; if fails, user must re-pay next session)
-          fetchWithRetry(`${API}/check-unlock`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ token: _tokenRec.token, mobile: _mobile })
-          }).then(r=>r.json()).then(d=>{
-            if(d.valid){
-              tests.forEach(t=>t.unlocked=true);
-              renderHome();
-            } else {
-              localStorage.removeItem('mhtcet_unlock_token');
-              tests.forEach(t=>t.unlocked=false);
-              renderHome();
-              toast('⚠ Your session expired. Please re-verify your payment.');
-            }
-          }).catch(()=>{ /* offline — keep current unlocked state from token */ tests.forEach(t=>t.unlocked=true); });
-        }
-        return;
-      }
-    }
-  }catch(e){}
-  tests=DEFAULT_TESTS;
+    const r = await fetchWithRetry(API+'/tests');
+    tests = await r.json();
+    // Re-verify unlock status from server
+    await reVerifyUnlock();
+    renderHero(); renderSubStrip(); renderHome();
+  }catch(e){
+    console.error('Failed to load tests:',e);
+    toast('⚠ Could not load tests. Check your connection.');
+  }
 }
 
-// ═══════════════════════ STREAM SWITCHING ═══════════════════════
+async function reVerifyUnlock(){
+  if(!currentUser) return;
+  try{
+    const rec = JSON.parse(localStorage.getItem('mhtcet_unlock_token')||'{}');
+    if(!rec.token || rec.mobile !== currentUser.mobile){ return; }
+    const r = await fetchWithRetry(API+'/check-unlock',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token:rec.token, mobile:currentUser.mobile})
+    });
+    const d = await r.json();
+    if(d.valid){
+      tests.forEach(t=>t.unlocked=true);
+    } else {
+      localStorage.removeItem('mhtcet_unlock_token');
+      tests.forEach(t=>t.unlocked=false);
+    }
+  }catch(e){ /* offline – keep existing */ }
+}
+
+// ══════════════════════════════════════════════
+// STREAM SWITCHING
+// ══════════════════════════════════════════════
 function setStream(s){
   curStream=s;
-  document.querySelectorAll('.stream-tab-btn').forEach(b=>{ b.className='stream-tab-btn'; });
-  document.getElementById('hero-banner').style.background='';
-  const sBtn=document.getElementById('stream-'+s+'-btn');if(sBtn)sBtn.className='stream-tab-btn active-'+(s==='jee'?'neet':s);
-  renderSubStrip();
-  renderHero();
-  renderHome();
+  document.querySelectorAll('.stream-tab-btn').forEach(b=>b.className='stream-tab-btn');
+  const sBtn=document.getElementById('stream-'+s+'-btn');
+  if(sBtn) sBtn.className='stream-tab-btn active-'+(s==='jee'?'neet':s);
+  renderSubStrip(); renderHero(); renderHome();
 }
 
 function renderHero(){
@@ -984,37 +933,35 @@ function renderHero(){
   if(curStream==='neet'){
     hero.className='hero neet-hero';
     title.textContent='NEET Test Series 2025';
-    desc.textContent='National Eligibility cum Entrance Test preparation — 180 questions, 720 marks, negative marking.';
+    desc.textContent='National Eligibility cum Entrance Test — 180 questions, 720 marks, negative marking.';
     chips.innerHTML=`<div class="hchip neet-chip"><strong>720</strong>Total Marks</div>
-      <div class="hchip neet-chip"><strong>+4 / −1</strong>Marking Scheme</div>
+      <div class="hchip neet-chip"><strong>+4 / −1</strong>Marking</div>
       <div class="hchip neet-chip"><strong>3 Hours</strong>Duration</div>
       <div class="hchip neet-chip"><strong>180 Qs</strong>45P+45C+90B</div>`;
   } else if(curStream==='jee'){
     hero.className='hero neet-hero';
     hero.style.background='linear-gradient(140deg,#bf360c 0%,#e65100 50%,#ff6f00 100%)';
     title.textContent='PrepXpert JEE Test Series 2025';
-    desc.textContent='JEE preparation — 90 questions, 360 marks, negative marking. Last 5 per subject are numerical fill-in-the-blank.';
+    desc.textContent='JEE — 90 questions, 360 marks, negative marking. Last 5 per subject are numerical.';
     chips.innerHTML=`<div class="hchip neet-chip"><strong>360</strong>Total Marks</div>
-      <div class="hchip neet-chip"><strong>+4 / −1</strong>MCQ Marking</div>
+      <div class="hchip neet-chip"><strong>+4 / −1</strong>MCQ</div>
       <div class="hchip neet-chip"><strong>3 Hours</strong>Duration</div>
-      <div class="hchip neet-chip"><strong>Last 5</strong>Numerical per Subject</div>`;
+      <div class="hchip neet-chip"><strong>Last 5</strong>Numerical/Subject</div>`;
   } else if(curStream==='pcb'){
-    hero.className='hero pcb';
-    hero.style.background='';
+    hero.className='hero pcb'; hero.style.background='';
     title.textContent='PrepXpert PCB Test Series 2025';
-    desc.textContent='Physics, Chemistry & Biology — 200 questions, 200 marks, no negative marking.';
+    desc.textContent='Physics, Chemistry & Biology — 200 questions, 200 marks.';
     chips.innerHTML=`<div class="hchip"><strong>200</strong>Total Marks</div>
       <div class="hchip"><strong>3 Hours</strong>Duration</div>
-      <div class="hchip"><strong>Zero</strong>Negative Marking</div>
+      <div class="hchip"><strong>Zero</strong>Negative</div>
       <div class="hchip"><strong>PCB</strong>Stream</div>`;
   } else {
-    hero.className='hero pcm';
-    hero.style.background='';
+    hero.className='hero pcm'; hero.style.background='';
     title.textContent='PrepXpert PCM Test Series 2025';
-    desc.textContent='Physics, Chemistry & Mathematics — 150 questions, 200 marks, no negative marking.';
+    desc.textContent='Physics, Chemistry & Mathematics — 150 questions, 200 marks.';
     chips.innerHTML=`<div class="hchip"><strong>200</strong>Total Marks</div>
       <div class="hchip"><strong>3 Hours</strong>Duration</div>
-      <div class="hchip"><strong>Zero</strong>Negative Marking</div>
+      <div class="hchip"><strong>Zero</strong>Negative</div>
       <div class="hchip"><strong>PCM</strong>Stream</div>`;
   }
 }
@@ -1023,138 +970,175 @@ function renderSubStrip(){
   const strip=document.getElementById('sub-strip');
   const lbl=document.getElementById('stream-label');
   if(curStream==='jee'){
-    strip.innerHTML=`
-      <div class="sub-chip"><div class="sv" style="color:var(--jee)">30</div><div class="sl">Physics · +4/−1 MCQ</div></div>
-      <div class="sub-chip"><div class="sv" style="color:var(--jee)">30</div><div class="sl">Chemistry · +4/−1 MCQ</div></div>
+    strip.innerHTML=`<div class="sub-chip"><div class="sv" style="color:var(--jee)">30</div><div class="sl">Physics · +4/−1</div></div>
+      <div class="sub-chip"><div class="sv" style="color:var(--jee)">30</div><div class="sl">Chemistry · +4/−1</div></div>
       <div class="sub-chip"><div class="sv" style="color:var(--jee)">30</div><div class="sl">Maths · Last 5 Numerical</div></div>`;
-    lbl.textContent='JEE Tests — 90 Questions · 360 Marks · Negative Marking · Numerical Fill-In';
-    lbl.style.color='var(--jee)';
+    lbl.textContent='JEE — 90 Questions · 360 Marks · Negative Marking'; lbl.style.color='var(--jee)';
   } else if(curStream==='neet'){
-    strip.innerHTML=`
-      <div class="sub-chip"><div class="sv" style="color:var(--neet)">45</div><div class="sl">Physics · +4/−1</div></div>
+    strip.innerHTML=`<div class="sub-chip"><div class="sv" style="color:var(--neet)">45</div><div class="sl">Physics · +4/−1</div></div>
       <div class="sub-chip"><div class="sv" style="color:var(--neet)">45</div><div class="sl">Chemistry · +4/−1</div></div>
       <div class="sub-chip"><div class="sv" style="color:var(--neet)">90</div><div class="sl">Biology · +4/−1</div></div>`;
-    lbl.textContent='NEET Tests — 180 Questions · 720 Marks · Negative Marking';
-    lbl.style.color='var(--neet)';
+    lbl.textContent='NEET — 180 Questions · 720 Marks · Negative Marking'; lbl.style.color='var(--neet)';
   } else if(curStream==='pcb'){
-    strip.innerHTML=`
-      <div class="sub-chip"><div class="sv" style="color:var(--phy)">50</div><div class="sl">Physics · 1 mark</div></div>
-      <div class="sub-chip"><div class="sv" style="color:var(--che)">50</div><div class="sl">Chemistry · 1 mark</div></div>
-      <div class="sub-chip"><div class="sv" style="color:var(--bio)">100</div><div class="sl">Biology · 1 mark</div></div>`;
-    lbl.textContent='PCB Tests — 200 Questions · 200 Marks';
-    lbl.style.color='var(--pri)';
+    strip.innerHTML=`<div class="sub-chip"><div class="sv" style="color:var(--phy)">50</div><div class="sl">Physics</div></div>
+      <div class="sub-chip"><div class="sv" style="color:var(--che)">50</div><div class="sl">Chemistry</div></div>
+      <div class="sub-chip"><div class="sv" style="color:var(--bio)">100</div><div class="sl">Biology</div></div>`;
+    lbl.textContent='PCB — 200 Questions · 200 Marks'; lbl.style.color='var(--pri)';
   } else {
-    strip.innerHTML=`
-      <div class="sub-chip"><div class="sv" style="color:var(--phy)">50</div><div class="sl">Physics · 1 mark</div></div>
-      <div class="sub-chip"><div class="sv" style="color:var(--che)">50</div><div class="sl">Chemistry · 1 mark</div></div>
-      <div class="sub-chip"><div class="sv" style="color:var(--mat)">50</div><div class="sl">Maths · 2 marks</div></div>`;
-    lbl.textContent='PCM Tests — 150 Questions · 200 Marks';
-    lbl.style.color='var(--pri)';
+    strip.innerHTML=`<div class="sub-chip"><div class="sv" style="color:var(--phy)">50</div><div class="sl">Physics</div></div>
+      <div class="sub-chip"><div class="sv" style="color:var(--che)">50</div><div class="sl">Chemistry</div></div>
+      <div class="sub-chip"><div class="sv" style="color:var(--mat)">50</div><div class="sl">Maths</div></div>`;
+    lbl.textContent='PCM — 150 Questions · 200 Marks'; lbl.style.color='var(--pri)';
   }
 }
 
-// ═══════════════════════ HOME ═══════════════════════
+// ══════════════════════════════════════════════
+// HOME — TEST CARDS
+// ══════════════════════════════════════════════
 function renderHome(){
   const fg=document.getElementById('free-grid'), pg=document.getElementById('paid-grid');
   fg.innerHTML=''; pg.innerHTML='';
   const streamTests=tests.filter(t=>(t.stream||'pcm')===curStream);
-  const visible=streamTests.filter(t=>t.active||(t.qbank&&(t.qbank[0]?.length||t.qbank[1]?.length||t.qbank[2]?.length)));
-  const freeTests=visible.filter(t=>t.free);
-  const paidTests=visible.filter(t=>!t.free);
-  if(!freeTests.length) fg.innerHTML=`<p style="color:var(--muted);font-size:13px;padding:4px 0">No ${curStream.toUpperCase()} free tests available yet.</p>`;
+  const freeTests=streamTests.filter(t=>t.free);
+  const paidTests=streamTests.filter(t=>!t.free);
+  if(!freeTests.length) fg.innerHTML=`<p style="color:var(--muted);font-size:13px">No ${curStream.toUpperCase()} free tests available yet.</p>`;
   freeTests.forEach(t=>fg.appendChild(makeTestCard(t)));
-  if(!paidTests.length) pg.innerHTML=`<p style="color:var(--muted);font-size:13px;padding:4px 0">No ${curStream.toUpperCase()} paid tests available yet.</p>`;
+  if(!paidTests.length) pg.innerHTML=`<p style="color:var(--muted);font-size:13px">No ${curStream.toUpperCase()} paid tests available yet.</p>`;
   paidTests.forEach(t=>pg.appendChild(makeTestCard(t)));
 }
 
 function makeTestCard(t){
-  const total=(t.qbank?.[0]?.length||0)+(t.qbank?.[1]?.length||0)+(t.qbank?.[2]?.length||0);
-  const hasQs=total>0;
-  const isNEET=t.stream==='neet';
-  const isJEE=t.stream==='jee';
-  const totalMarks=isNEET?NEET_SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0):isJEE?360:200;
-  const marksLabel=isNEET?`720 marks · +4/−1`:isJEE?`360 marks · +4/−1 MCQ`:`200 marks`;
+  const isNEET=t.stream==='neet', isJEE=t.stream==='jee';
+  const marksLabel=isNEET?'720 marks · +4/−1':isJEE?'360 marks · +4/−1':'200 marks';
   const card=document.createElement('div');
-  card.className='tcard'+(isNEET?' neet-card':isJEE?' neet-card':'')+(!t.free&&!t.unlocked?' locked':'');
+  card.className='tcard'+(isNEET||isJEE?' neet-card':'')+(!t.free&&!t.unlocked?' locked':'');
   const topics=t.topics||{};
   const thirdLbl=isNEET?'Bio':(t.stream==='pcb'?'Bio':'Maths');
-  const thirdColor=isNEET||t.stream==='pcb'?'var(--neet)':isJEE?'var(--jee)':'var(--mat)';
-  const topicsHtml=(topics.phy||topics.che||topics.third)?`<div style="margin-top:9px;font-size:11px;line-height:1.75;background:#f8f9ff;border-radius:8px;padding:8px 11px;border:1px solid #e0e3ff;">${topics.phy?`<div><span style="font-weight:700;color:var(--phy)">Phy:</span> ${escHtml(topics.phy)}</div>`:''}${topics.che?`<div><span style="font-weight:700;color:var(--che)">Chem:</span> ${escHtml(topics.che)}</div>`:''}${topics.third?`<div><span style="font-weight:700;color:${thirdColor}">${thirdLbl}:</span> ${escHtml(topics.third)}</div>`:''}</div>`:'';
+  const topicsHtml=(topics.phy||topics.che||topics.third)?`<div style="margin-top:9px;font-size:11px;line-height:1.75;background:#f8f9ff;border-radius:8px;padding:8px 11px;border:1px solid #e0e3ff;">${topics.phy?`<div><span style="font-weight:700;color:var(--phy)">Phy:</span> ${escHtml(topics.phy)}</div>`:''}${topics.che?`<div><span style="font-weight:700;color:var(--che)">Chem:</span> ${escHtml(topics.che)}</div>`:''}${topics.third?`<div><span style="font-weight:700;color:var(--neet)">${thirdLbl}:</span> ${escHtml(topics.third)}</div>`:''}</div>`:'';
   card.innerHTML=`
-    <span class="tbadge ${t.free?'free':'paid'} ${isNEET||isJEE?'neet-badge':''}">${t.free?'FREE':'PAID'}${isNEET?' · NEET':isJEE?' · JEE':''}</span>
+    <span class="tbadge ${t.free?'free':'paid'}${isNEET||isJEE?' neet-badge':''}">${t.free?'FREE':'PAID'}${isNEET?' · NEET':isJEE?' · JEE':''}</span>
     <h3>${escHtml(t.name)}</h3>
     <p>${escHtml(t.desc||'')}</p>
     ${topicsHtml}
     <div class="tmeta">
-      <span>📋 ${hasQs?total+' Q':'—'}</span>
-      <span>⏱ ${settings.duration} min</span>
+      <span>📋 ${t.totalQ||'—'} Q</span>
+      <span>⏱ ${t.duration||180} min</span>
       <span>🏆 ${marksLabel}</span>
-      ${isNEET?'<span style="color:var(--err);font-weight:700">⚠ −1 Neg</span>':''}
+      ${isNEET||isJEE?'<span style="color:var(--err);font-weight:700">⚠ −1 Neg</span>':''}
     </div>
     ${(!t.free&&!t.unlocked)
-      ? `<button class="btn ${isNEET||isJEE?'btn-neet':'btn-acc'} btn-sm" style="width:100%;margin-top:12px" onclick="unlockTest(${t.id})">🔒 Unlock — ₹${settings.price||30}</button>`
-      : hasQs
-        ? `<button class="btn ${isNEET||isJEE?'btn-neet':'btn-pri'} btn-sm" style="width:100%;margin-top:12px" onclick="openInst(${t.id})">Start Test →</button>`
-        : `<button class="btn btn-sm" style="width:100%;margin-top:12px;background:#f0f2f5;color:var(--muted);cursor:default" disabled>Coming Soon</button>`
+      ?`<button class="btn ${isNEET||isJEE?'btn-neet':'btn-acc'} btn-sm" style="width:100%;margin-top:12px" onclick="unlockTest('${t.id}')">🔒 Unlock — ₹${settings.price||30}</button>`
+      :(t.totalQ>0)
+        ?`<button class="btn ${isNEET||isJEE?'btn-neet':'btn-pri'} btn-sm" style="width:100%;margin-top:12px" onclick="openInst('${t.id}')">Start Test →</button>`
+        :`<button class="btn btn-sm" style="width:100%;margin-top:12px;background:#f0f2f5;color:var(--muted);cursor:default" disabled>Coming Soon</button>`
     }`;
   return card;
 }
 
-// ═══════════════════════ INSTRUCTIONS ═══════════════════════
+// ══════════════════════════════════════════════
+// INSTRUCTIONS
+// ══════════════════════════════════════════════
 function openInst(id){
-  curTest=tests.find(t=>t.id===id)||tests[id];
-  const totalQs=(curTest?.qbank?.[0]?.length||0)+(curTest?.qbank?.[1]?.length||0)+(curTest?.qbank?.[2]?.length||0);
-  if(!totalQs){ toast('⚠ No questions loaded. Admin needs to add questions first.'); return; }
-  SUBS=getSubs();
-  curTest.state={};
-  [0,1,2].forEach(s=>{ curTest.state[s]=(curTest.qbank[s]||[]).map(q=>({...q,status:'nv',chosen:null})); });
-  const isNEET=curTest.stream==='neet';
-  const isJEE=curTest.stream==='jee';
-  document.getElementById('inst-ttl').textContent=`Instructions — ${curTest.name}`;
-  // Show/hide NEET warning
+  curTest = tests.find(t=>t.id===id);
+  if(!curTest){ toast('Test not found'); return; }
+  if(!curTest.totalQ){ toast('⚠ No questions yet. Check back later.'); return; }
+  SUBS = getSubs(curTest.stream);
+  const isNEET=curTest.stream==='neet', isJEE=curTest.stream==='jee';
+  document.getElementById('inst-ttl').textContent='Instructions — '+curTest.name;
   document.getElementById('neet-inst-warning').style.display=(isNEET||isJEE)?'block':'none';
-  const warnTitle=document.getElementById('neg-warning-title');
-  if(warnTitle) warnTitle.textContent=isJEE?'⚠ JEE: MCQ Negative Marking | Numerical: No Negative':'⚠ NEET Negative Marking Active!';
+  const wt=document.getElementById('neg-warning-title');
+  if(wt) wt.textContent=isJEE?'⚠ JEE: MCQ Negative | Numerical: No Negative':'⚠ NEET Negative Marking Active!';
   document.getElementById('inst-neg-line').textContent=isNEET
-    ?'NEET Negative Marking: Correct = +4 marks, Wrong = −1 mark, Skipped = 0 marks.'
-    :isJEE?'JEE Marking: MCQ Correct = +4, MCQ Wrong = −1, Numerical Correct = +4, Numerical Wrong = 0.'
-    :'No negative marking — only correct answers earn marks.';
-  // Marks table
+    ?'NEET: Correct = +4, Wrong = −1, Skip = 0'
+    :isJEE?'JEE: MCQ Correct = +4, Wrong = −1, Numerical Correct = +4, Wrong = 0'
+    :'No negative marking.';
   const totalQ=SUBS.reduce((a,s)=>a+s.maxQ,0);
-  const totalM=SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0);
   document.getElementById('inst-marks-table').innerHTML=`
-    <tr><th>Subject</th><th>Questions</th><th>Type</th><th>Marks/Q</th><th>${isNEET||isJEE?'Wrong':'Total'}</th><th>Total</th></tr>
-    ${SUBS.map(s=>`<tr>
-      <td>${s.name}</td><td>${s.maxQ}</td>
-      <td style="color:var(--ok);font-weight:700">+${s.marks}</td>
-      ${isNEET?`<td style="color:var(--err);font-weight:700">−${s.neg}</td>`:''}
-      <td><strong>${s.maxQ*s.marks}</strong></td>
-    </tr>`).join('')}
-    <tr style="background:#f8f9ff"><td><strong>Total</strong></td><td><strong>${totalQ}</strong></td><td>—</td>${isNEET?'<td>—</td>':''}<td><strong>${totalM}</strong></td></tr>`;
-  document.getElementById('inst-switch-line').textContent=`Switch between ${SUBS.map(s=>s.name).join(', ')} sections freely at any time.`;
-  // Update start button color for NEET
+    <tr><th>Subject</th><th>Questions</th><th>Marks/Q</th>${isNEET||isJEE?'<th>Wrong</th>':''}<th>Total</th></tr>
+    ${SUBS.map(s=>`<tr><td>${s.name}</td><td>${s.maxQ}</td><td style="color:var(--ok)">+${s.marks}</td>${isNEET||isJEE?`<td style="color:var(--err)">−${s.neg}</td>`:''}<td><strong>${s.maxQ*s.marks}</strong></td></tr>`).join('')}
+    <tr style="background:#f8f9ff"><td><strong>Total</strong></td><td><strong>${totalQ}</strong></td><td>—</td>${isNEET||isJEE?'<td>—</td>':''}<td><strong>${SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0)}</strong></td></tr>`;
+  document.getElementById('inst-duration').textContent=(curTest.duration||180)+' minutes';
+  document.getElementById('inst-switch-line').textContent='Switch between '+SUBS.map(s=>s.name).join(', ')+' freely.';
   const sb=document.getElementById('start-btn');
-  sb.className=`btn ${isNEET||isJEE?'btn-neet':'btn-pri'}`;
+  sb.className='btn '+(isNEET||isJEE?'btn-neet':'btn-pri');
   showScr('inst-scr');
 }
 
-// ═══════════════════════ EXAM ═══════════════════════
-function startExam(){
-  curSec=0; curQ=0;
-  setExamMode(true); blurCount=0;
-  if(curTest.state[0][0]) curTest.state[0][0].status='skp';
-  const isNEET=curTest.stream==='neet';
-  const isJEE=curTest.stream==='jee';
+// ══════════════════════════════════════════════
+// EXAM — LOAD QUESTIONS FROM BACKEND (no answers in browser)
+// ══════════════════════════════════════════════
+async function startExam(){
+  if(!curTest){ toast('No test selected'); return; }
+
+  // Show loading state
+  document.getElementById('start-btn').textContent='Loading…';
+  document.getElementById('start-btn').disabled=true;
+
+  try{
+    // Build headers — include unlock token for paid tests
+    const headers = {'Content-Type':'application/json'};
+    if(!curTest.free && currentUser){
+      const rec = JSON.parse(localStorage.getItem('mhtcet_unlock_token')||'{}');
+      if(rec.token){ headers['x-unlock-token']=rec.token; headers['x-mobile']=currentUser.mobile; }
+    }
+
+    const r = await fetchWithRetry(API+'/exam/'+curTest.id, {headers});
+    const data = await r.json();
+
+    if(!data.questions || !data.questions.length){
+      toast('⚠ No questions found for this test.');
+      document.getElementById('start-btn').textContent='Begin Test →';
+      document.getElementById('start-btn').disabled=false;
+      return;
+    }
+
+    // Build exam state from backend questions — NO answers stored here
+    SUBS = getSubs(curTest.stream);
+    examState = {};
+    curTest.sections = {0:[],1:[],2:[]};
+
+    data.questions.forEach(q=>{
+      const sec = Number(q.section||0);
+      if(!curTest.sections[sec]) curTest.sections[sec]=[];
+      curTest.sections[sec].push({
+        _id:         q._id,
+        q:           q.q,
+        opts:        q.opts||[],
+        isNumerical: q.isNumerical||false,
+        img:         q.img||'',
+        status:      'nv',
+        chosen:      null,
+        numericalInput: '',
+      });
+    });
+
+    document.getElementById('start-btn').textContent='Begin Test →';
+    document.getElementById('start-btn').disabled=false;
+
+  }catch(e){
+    console.error('Failed to load exam:',e);
+    toast('⚠ Could not load questions. Check connection and try again.');
+    document.getElementById('start-btn').textContent='Begin Test →';
+    document.getElementById('start-btn').disabled=false;
+    return;
+  }
+
+  // Start exam UI
+  curSec=0; curQ=0; blurCount=0;
+  setExamMode(true);
+  if(curTest.sections[0][0]) curTest.sections[0][0].status='skp';
+
   const stabs=document.getElementById('stabs');
-  stabs.innerHTML=SUBS.map((sub,i)=>`<div class="stab${i===0?' on':''}" data-s="${i}" onclick="switchSec(${i})">${sub.name}</div>`).join('');
+  stabs.innerHTML=SUBS.map((s,i)=>`<div class="stab${i===0?' on':''}" data-s="${i}" onclick="switchSec(${i})">${s.name}</div>`).join('');
+
   document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));
   document.getElementById('exam-scr').classList.add('on');
   document.getElementById('timer').style.display='block';
   document.getElementById('sub-btn').style.display='inline-flex';
   document.getElementById('home-btn').style.display='none';
-  // Show neg marking hint during exam
-  document.getElementById('neet-neg-hint').style.display=(isNEET||curTest.stream==='jee')?'flex':'none';
-  timeLeft=settings.duration*60;
+  document.getElementById('neet-neg-hint').style.display=(curTest.stream==='neet'||curTest.stream==='jee')?'flex':'none';
+
+  timeLeft=(curTest.duration||180)*60;
   updateTimer();
   timerInt=setInterval(()=>{ timeLeft--; if(timeLeft<=0){clearInterval(timerInt);submitTest();return;} updateTimer(); },1000);
   checkMobNav();
@@ -1162,7 +1146,7 @@ function startExam(){
     const sb=document.getElementById('exam-sb');
     if(sb){sb.classList.remove('mob-open');sb.style.display='';}
     const btn=document.getElementById('mob-nav-btn');
-    if(btn)btn.textContent='☰ Nav';
+    if(btn) btn.textContent='☰ Nav';
   }
   renderQ(); renderSB();
 }
@@ -1183,50 +1167,35 @@ function switchSec(s){
 }
 
 function renderQ(){
-  const qs=curTest.state[curSec]; if(!qs||!qs.length) return;
+  const qs=curTest.sections[curSec]; if(!qs||!qs.length) return;
   const q=qs[curQ]; const sub=SUBS[curSec];
-  const isNEET=curTest.stream==='neet';
-  const isJEE=curTest.stream==='jee';
+  const isNEET=curTest.stream==='neet', isJEE=curTest.stream==='jee';
   const badge=document.getElementById('qnuml');
   badge.textContent=`Q${curQ+1} of ${qs.length} · ${sub.name}`;
   badge.style.background=sub.color;
-  const mrkBadge=document.getElementById('qmrkl');
-  mrkBadge.textContent=isNEET?`+${sub.marks} / −${sub.neg}`:`${sub.marks} Mark${sub.marks>1?'s':''}`;
-  mrkBadge.className=`qmrk-badge${isNEET?' neet-marks':''}`;
+  const mb=document.getElementById('qmrkl');
+  mb.textContent=isNEET||isJEE?`+${sub.marks} / −${sub.neg}`:`${sub.marks} Mark${sub.marks>1?'s':''}`;
+  mb.className='qmrk-badge'+(isNEET?' neet-marks':'');
   const qtxt=document.getElementById('qtxt');
   qtxt.textContent=q.q;
-  qtxt.className=`qtxt${isNEET?' neet-q':''}`;
+  qtxt.className='qtxt'+(isNEET?' neet-q':'');
   let imgEl=document.getElementById('q-diagram');
-  if(!imgEl){ imgEl=document.createElement('img'); imgEl.id='q-diagram'; imgEl.className='qimg'; qtxt.after(imgEl); }
-  if(q.img){ imgEl.src=q.img; imgEl.style.display='block'; } else { imgEl.style.display='none'; imgEl.src=''; }
+  if(!imgEl){imgEl=document.createElement('img');imgEl.id='q-diagram';imgEl.className='qimg';qtxt.after(imgEl);}
+  if(q.img){imgEl.src=q.img;imgEl.style.display='block';}else{imgEl.style.display='none';imgEl.src='';}
   const ok=['A','B','C','D'];
   const ol=document.getElementById('opts'); ol.innerHTML='';
-  const isJEENum=q.isNumerical===true;
-  if(isJEENum){
-    // Numerical question — show keyboard input
-    const numVal=q.numericalInput!==undefined?q.numericalInput:'';
-    ol.innerHTML=`
-      <div style="background:#fff3e0;border:2px solid #e65100;border-radius:12px;padding:18px 20px;margin-bottom:8px;">
-        <div style="font-family:'Montserrat',sans-serif;font-size:14px;font-weight:700;color:#e65100;margin-bottom:10px;">
-          🔢 Numerical Answer — Type your answer below
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <input type="number" id="num-answer-inp" step="any" placeholder="Enter numerical answer..."
-            value="${numVal}"
-            style="flex:1;min-width:160px;padding:12px 16px;font-size:18px;font-family:'Montserrat',sans-serif;font-weight:700;border:2px solid #e65100;border-radius:8px;outline:none;background:#fffde7;color:#bf360c;"
-            oninput="saveNumericalInput(this.value)"
-            onkeydown="if(event.key==='Enter'){saveNext();}"
-          >
-          <div style="font-size:12px;color:#7b6000;line-height:1.6;">
-            <div>✅ +4 marks if correct</div>
-            <div>⬜ 0 marks if wrong</div>
-            <div style="font-size:11px;color:#999">No negative marking for numerical</div>
-          </div>
-        </div>
-        <div style="font-size:11px;color:#999;margin-top:8px;">Press Enter or click Save & Next to continue</div>
-      </div>`;
-    // Focus the input
-    setTimeout(()=>{ const inp=document.getElementById('num-answer-inp'); if(inp)inp.focus(); },100);
+  if(q.isNumerical){
+    ol.innerHTML=`<div style="background:#fff3e0;border:2px solid #e65100;border-radius:12px;padding:18px 20px;">
+      <div style="font-family:'Montserrat',sans-serif;font-size:14px;font-weight:700;color:#e65100;margin-bottom:10px;">🔢 Numerical — Type your answer</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <input type="number" id="num-answer-inp" step="any" placeholder="Enter answer…" value="${q.numericalInput||''}"
+          style="flex:1;min-width:160px;padding:12px 16px;font-size:18px;font-family:'Montserrat',sans-serif;font-weight:700;border:2px solid #e65100;border-radius:8px;outline:none;background:#fffde7;color:#bf360c;"
+          oninput="saveNumericalInput(this.value)" onkeydown="if(event.key==='Enter')saveNext();">
+        <div style="font-size:12px;color:#7b6000;line-height:1.6;"><div>✅ +4 if correct</div><div>⬜ 0 if wrong (no penalty)</div></div>
+      </div>
+      <div style="font-size:11px;color:#999;margin-top:8px;">Press Enter or Save & Next</div>
+    </div>`;
+    setTimeout(()=>{const inp=document.getElementById('num-answer-inp');if(inp)inp.focus();},100);
   } else {
     q.opts.forEach((o,i)=>{
       const d=document.createElement('div');
@@ -1240,25 +1209,20 @@ function renderQ(){
 }
 
 function saveNumericalInput(val){
-  const q=curTest.state[curSec][curQ];
+  const q=curTest.sections[curSec][curQ];
   q.numericalInput=val;
   q.status=val.trim()!==''?'ans':'skp';
   renderSB();
 }
-function selectOpt(i){ const q=curTest.state[curSec][curQ]; q.chosen=(q.chosen===i)?null:i; q.status=q.chosen!==null?'ans':'skp'; renderQ(); renderSB(); }
-function saveNext(){const q=curTest.state[curSec][curQ];q.status=q.chosen!==null?'ans':'skp';navNext();}
-function skipQ(){curTest.state[curSec][curQ].status='skp';navNext();}
-function markRev(){curTest.state[curSec][curQ].status='mkd';navNext();}
-function clearR(){
-  const q=curTest.state[curSec][curQ];
-  if(q.isNumerical){q.numericalInput='';q.status='skp';}
-  else{q.chosen=null;q.status='skp';}
-  renderQ();renderSB();
-}
-function prevQ(){if(curQ>0){curQ--;const q=curTest.state[curSec][curQ];if(q.status==='nv')q.status='skp';renderQ();renderSB();}}
+function selectOpt(i){const q=curTest.sections[curSec][curQ];q.chosen=(q.chosen===i)?null:i;q.status=q.chosen!==null?'ans':'skp';renderQ();renderSB();}
+function saveNext(){const q=curTest.sections[curSec][curQ];q.status=q.chosen!==null||q.numericalInput?'ans':'skp';navNext();}
+function skipQ(){curTest.sections[curSec][curQ].status='skp';navNext();}
+function markRev(){curTest.sections[curSec][curQ].status='mkd';navNext();}
+function clearR(){const q=curTest.sections[curSec][curQ];if(q.isNumerical){q.numericalInput='';q.status='skp';}else{q.chosen=null;q.status='skp';}renderQ();renderSB();}
+function prevQ(){if(curQ>0){curQ--;const q=curTest.sections[curSec][curQ];if(q.status==='nv')q.status='skp';renderQ();renderSB();}}
 function navNext(){
-  const total=curTest.state[curSec].length;
-  if(curQ<total-1){curQ++;const q=curTest.state[curSec][curQ];if(q.status==='nv')q.status='skp';}
+  const total=curTest.sections[curSec].length;
+  if(curQ<total-1){curQ++;const q=curTest.sections[curSec][curQ];if(q.status==='nv')q.status='skp';}
   else if(curSec<2){switchSec(curSec+1);return;}
   renderQ();renderSB();
 }
@@ -1267,9 +1231,7 @@ function gotoQ(){
   const totalQ=SUBS.reduce((a,s)=>a+s.maxQ,0);
   const raw=parseInt(document.getElementById('goto-inp').value);
   if(!raw||raw<1||raw>totalQ){toast('Enter 1–'+totalQ);return;}
-  const n=raw-1;
-  let ts,qi;
-  let cum=0;
+  const n=raw-1; let ts,qi,cum=0;
   for(let s=0;s<SUBS.length;s++){
     if(n<cum+SUBS[s].maxQ){ts=s;qi=n-cum;break;}
     cum+=SUBS[s].maxQ;
@@ -1277,8 +1239,8 @@ function gotoQ(){
   curSec=ts; curQ=qi;
   document.querySelectorAll('.stab').forEach(t=>t.classList.remove('on'));
   document.querySelector(`.stab[data-s="${ts}"]`).classList.add('on');
-  const q=curTest.state[curSec][curQ]; if(q&&q.status==='nv')q.status='skp';
-  renderQ(); renderSB(); document.getElementById('goto-inp').value='';
+  const q=curTest.sections[curSec][curQ];if(q&&q.status==='nv')q.status='skp';
+  renderQ();renderSB();document.getElementById('goto-inp').value='';
 }
 
 function renderSB(){
@@ -1286,9 +1248,9 @@ function renderSB(){
   let an=0,sk=0,nv=0,mk=0;
   [0,1,2].forEach(s=>{
     const sub=SUBS[s];
-    const lb=document.createElement('div'); lb.className=`slbl ${sub.cls}`; lb.textContent=sub.name; gc.appendChild(lb);
-    const gd=document.createElement('div'); gd.className='qgrd';
-    (curTest.state[s]||[]).forEach((q,i)=>{
+    const lb=document.createElement('div');lb.className=`slbl ${sub.cls}`;lb.textContent=sub.name;gc.appendChild(lb);
+    const gd=document.createElement('div');gd.className='qgrd';
+    (curTest.sections[s]||[]).forEach((q,i)=>{
       const isCur=s===curSec&&i===curQ;
       const b=document.createElement('button');
       b.className='qbtn '+(isCur?'cur':q.status);
@@ -1297,7 +1259,7 @@ function renderSB(){
         curSec=s;curQ=i;
         document.querySelectorAll('.stab').forEach(t=>t.classList.remove('on'));
         document.querySelector(`.stab[data-s="${s}"]`).classList.add('on');
-        const qq=curTest.state[s][i];if(qq.status==='nv')qq.status='skp';
+        const qq=curTest.sections[s][i];if(qq.status==='nv')qq.status='skp';
         renderQ();renderSB();
       };
       if(q.status==='ans')an++;else if(q.status==='skp')sk++;else if(q.status==='nv')nv++;else if(q.status==='mkd')mk++;
@@ -1311,113 +1273,105 @@ function renderSB(){
 
 function updateUA(){
   let ua=0;
-  [0,1,2].forEach(s=>(curTest.state[s]||[]).forEach(q=>{
+  [0,1,2].forEach(s=>(curTest.sections[s]||[]).forEach(q=>{
     if(q.isNumerical){if(!q.numericalInput||q.numericalInput.trim()==='')ua++;}
     else{if(q.chosen===null)ua++;}
   }));
-  document.getElementById('ua-count').textContent=ua>0?`${ua} question(s) unanswered`:'All questions answered! ✓';
+  document.getElementById('ua-count').textContent=ua>0?`${ua} question(s) unanswered`:'All answered! ✓';
 }
 
 function confirmSubmit(){
   let ua=0;
-[0,1,2].forEach(s=>(curTest.state[s] || []).forEach(q =>{
-  if (!q) return;   // ✅ ADD THIS LINE
-
-  
+  [0,1,2].forEach(s=>(curTest.sections[s]||[]).forEach(q=>{
+    if(!q) return;
     if(q.isNumerical){if(!q.numericalInput||q.numericalInput.trim()==='')ua++;}
     else{if(q.chosen===null)ua++;}
   }));
-
-  const isNEET=curTest.stream==='neet';
-  const isJEE=curTest.stream==='jee';
-  let msg=ua>0?`${ua} questions are unanswered.`:'All answered.';
-  if(isNEET&&ua>0) msg+=' (Unanswered = 0 marks, better than a wrong answer which deducts 1 mark.)';
-  msg+=' Ready to submit?';
+  let msg=ua>0?`${ua} questions unanswered. `:'All answered. ';
+  if(curTest.stream==='neet'&&ua>0) msg+='(Skipping is safer than wrong answers in NEET.) ';
+  msg+='Ready to submit?';
   document.getElementById('conf-msg').textContent=msg;
   document.getElementById('conf-ov').classList.add('on');
 }
 
-function submitTest(){
+// ══════════════════════════════════════════════
+// SUBMIT → SERVER GRADES → SHOW RESULTS
+// Answers never stored in browser. Server grades and returns results + solutions.
+// ══════════════════════════════════════════════
+async function submitTest(){
   closeModal('conf-ov');
   if(timerInt){clearInterval(timerInt);timerInt=null;}
   setExamMode(false);
   document.getElementById('timer').style.display='none';
   document.getElementById('sub-btn').style.display='none';
   document.getElementById('home-btn').style.display='inline-flex';
-  showResults();
+
+  // Build answers object: { "section-index": chosen }
+  const answers={};
+  [0,1,2].forEach(s=>{
+    (curTest.sections[s]||[]).forEach((q,i)=>{
+      const key=`${s}-${i}`;
+      if(q.isNumerical) answers[key] = q.numericalInput||null;
+      else answers[key] = q.chosen;
+    });
+  });
+
+  // Show loading while server grades
+  showScr('result-scr');
+  document.getElementById('result-hero').innerHTML=`<div style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">⏳</div><div style="font-family:'Montserrat',sans-serif;font-size:18px;font-weight:700;color:#fff">Grading your answers…</div><div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:6px">Please wait</div></div>`;
+
+  try{
+    const r = await fetchWithRetry(API+'/submit',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        testId:  curTest.id,
+        mobile:  currentUser?.mobile||'guest',
+        name:    currentUser?.name||'Student',
+        answers
+      })
+    });
+    const data = await r.json();
+    if(!data.success) throw new Error(data.error||'Server error');
+    showResults(data.result, data.review);
+  }catch(e){
+    console.error('Submit failed:',e);
+    toast('⚠ Could not submit. Check connection and retry.');
+    // Reset result screen
+    showScr('result-scr');
+  }
 }
 
-function retakeTest(){openInst(curTest.id);}
+function retakeTest(){ openInst(curTest.id); }
 
-// ═══════════════════════ RESULTS ═══════════════════════
-function showResults(){
-  const isNEET=curTest.stream==='neet';
-  const isJEE=curTest.stream==='jee';
-  let totScore=0,totC=0,totW=0,totS=0,totNeg=0;
-  const secStats=[];
-  [0,1,2].forEach(s=>{
-    
-    let sc=0,c=0,w=0,sk=0,neg=0;
-    const sub=SUBS[s];
-    (curTest.state[s]||[]).forEach(q=>{
-      if(q.isNumerical){
-        // Numerical: compare typed vs correct
-        
-        const typed=parseFloat((q.numericalInput||'').trim());
-        const correct=parseFloat(q.numericalAns||String(q.ans));
-        if(q.numericalInput===undefined||q.numericalInput.trim()===''){sk++;}
-        else if(!isNaN(typed)&&!isNaN(correct)&&Math.abs(typed-correct)<0.01){sc+=sub.marks;c++;}
-        else{w++; /* no negative for JEE numerical */}
-      } else {
-        if(q.chosen===null){sk++;}
-        else if(q.chosen===q.ans){sc+=sub.marks;c++;}
-        else{w++;if(isNEET||curTest.stream==='jee'){sc-=sub.neg;neg+=sub.neg;}}
-      
-        
-      }
-    });
-    
-    const actualQ=curTest.state[s]?.length||sub.maxQ;
-    const maxScore=actualQ*sub.marks;
-    secStats.push({c,w,sk,sc,neg,tot:maxScore});
-    totScore+=sc; totC+=c; totW+=w; totS+=sk; totNeg+=neg;
-  });const name = currentUser?.name || currentUser?.mobile || 'Unknown';
+// ══════════════════════════════════════════════
+// RESULTS — receives graded data from server
+// ══════════════════════════════════════════════
+function showResults(result, review){
+  const isNEET=curTest.stream==='neet', isJEE=curTest.stream==='jee';
+  const {score,total,correct,wrong,skipped,deducted,accuracy}=result;
 
-  // Calculate max possible marks BEFORE saving so we can send it as total
-  const totalMarks=SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0);
-
-fetchWithRetry(`${API}/save-result`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    name: name,
-    score: totScore,
-    total: totalMarks,
-    type: curTest.stream.toUpperCase()
-  })
-})
-.then(res => res.json())
-.then(data => { console.log("Saved ✅", data); })
-.catch(err => { console.error("Error saving result ❌", err); toast('⚠️ Could not save result – server may be waking up. Try again.'); });
-  const att=totC+totW, acc=att>0?Math.round(totC/att*100):0;
-
-  // Hero
+  // Reset hero
   const hero=document.getElementById('result-hero');
   hero.className=isNEET?'rhero neet-result':'rhero';
-  document.getElementById('r-tname').textContent=curTest.name;
-  document.getElementById('r-score').textContent=totScore;
-  document.getElementById('r-total-lbl').textContent=`out of ${totalMarks}`;
-  document.getElementById('r-c').textContent=totC;
-  document.getElementById('r-w').textContent=totW;
-  document.getElementById('r-s').textContent=totS;
-  document.getElementById('r-a').textContent=acc+'%';
-  // NEET negative stat
-  const negStat=document.getElementById('r-neg-stat');
-  negStat.style.display=isNEET?'block':'none';
-  if(isNEET){ document.getElementById('r-neg').textContent='-'+totNeg; negStat.className='rstat neg-stat'; }
+  hero.innerHTML=`<h2>Test Completed! 🎉</h2>
+    <div class="tname">${escHtml(curTest.name)}</div>
+    <div class="score-ring">
+      <div class="sv" id="r-score">${score}</div>
+      <div class="so">out of ${total}</div>
+    </div>
+    <div class="rstats">
+      <div class="rstat"><div class="rv">${correct}</div><div class="rl">Correct</div></div>
+      <div class="rstat"><div class="rv">${wrong}</div><div class="rl">Wrong</div></div>
+      <div class="rstat"><div class="rv">${skipped}</div><div class="rl">Skipped</div></div>
+      ${isNEET?`<div class="rstat neg-stat"><div class="rv">-${deducted}</div><div class="rl">Marks Deducted</div></div>`:''}
+      <div class="rstat"><div class="rv">${accuracy}%</div><div class="rl">Accuracy</div></div>
+    </div>`;
 
   // Section results
   const sr=document.getElementById('secres'); sr.innerHTML='';
+  const secStats=[{c:0,w:0,sk:0,sc:0,tot:0},{c:0,w:0,sk:0,sc:0,tot:0},{c:0,w:0,sk:0,sc:0,tot:0}];
+  review.forEach(q=>{ const s=secStats[q.section]; s.sc+=q.mark; if(q.status==='correct')s.c++; else if(q.status==='wrong')s.w++; else s.sk++; s.tot+=(SUBS[q.section]?.marks||1); });
   secStats.forEach((st,s)=>{
     const pct=st.tot>0?Math.round(Math.max(0,st.sc)/st.tot*100):0;
     const card=document.createElement('div');
@@ -1425,165 +1379,122 @@ fetchWithRetry(`${API}/save-result`, {
     card.innerHTML=`<h4>${SUBS[s].name}</h4>
       <div style="font-size:20px;font-weight:700;font-family:'Montserrat',sans-serif;color:${SUBS[s].color}">${st.sc}/${st.tot}</div>
       <div class="pbar"><div class="pfill" style="width:${pct}%;background:${SUBS[s].color}"></div></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:5px">✓ ${st.c} · ✗ ${st.w} · — ${st.sk}${isNEET?` · −${st.neg} deducted`:''}</div>`;
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">✓ ${st.c} · ✗ ${st.w} · — ${st.sk}${isNEET?` · −${st.sc<0?Math.abs(st.sc):0} deducted`:''}</div>`;
     sr.appendChild(card);
   });
 
-  // Answer Review with Solutions
+  // Answer review — server sent correct answers + solutions AFTER grading
   const al=document.getElementById('arev-list'); al.innerHTML='';
-  const ok=['A','B','C','D']; let gq=1;
-  [0,1,2].forEach(s=>{
-    (curTest.state[s]||[]).forEach((q,i)=>{
-      let isC, isW;
-      if(q.isNumerical){
-        const typed=parseFloat((q.numericalInput||'').trim());
-        const correct=parseFloat(q.numericalAns||String(q.ans));
-        isC=q.numericalInput&&q.numericalInput.trim()!==''&&!isNaN(typed)&&!isNaN(correct)&&Math.abs(typed-correct)<0.01;
-        isW=q.numericalInput&&q.numericalInput.trim()!==''&&!isC;
-      } else {
-        isC=q.chosen!==null&&q.chosen===q.ans;
-        isW=q.chosen!==null&&q.chosen!==q.ans;
-      }
-      const cls3=(q.isNumerical?(q.numericalInput===undefined||q.numericalInput.trim()===''):q.chosen===null)?'skip':isC?'ok':'wrong';
-      const icon=q.chosen===null?'○':isC?'✓':'✗';
-      const markChange=isC?`+${SUBS[s].marks}`:isW?(isNEET||curTest.stream==='jee'?`−${SUBS[s].neg}`:'0'):'0';
-      const markColor=isC?'var(--ok)':isW&&isNEET?'var(--err)':'var(--muted)';
-      const d=document.createElement('div');
-      d.className=`ritem ${cls3}`;
-      d.innerHTML=`
-        <div class="ric">${icon}</div>
-        <div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:3px">${SUBS[s].name} · Q${i+1} · Global Q${gq}</div>
-          <div style="font-size:13px;line-height:1.55">${q.q.substring(0,140)}${q.q.length>140?'…':''}</div>
-          ${q.img?`<img src="${q.img}" style="max-width:100%;max-height:120px;border-radius:6px;margin-top:6px;border:1px solid var(--bdr)">`:''}
-          <div style="font-size:12px;margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">
-            ${q.isNumerical
-              ? `<span style="color:var(--ok);font-weight:700">✓ Correct: ${q.numericalAns||q.ans}</span>
-                 ${q.numericalInput!==undefined&&q.numericalInput.trim()!==''
-                   ? `<span style="color:${Math.abs(parseFloat(q.numericalInput)-parseFloat(q.numericalAns||q.ans))<0.01?'var(--ok)':'var(--err)'}">Your answer: ${q.numericalInput}</span>`
-                   : '<span style="color:var(--muted)">Not attempted</span>'}`
-              : `<span style="color:var(--ok);font-weight:700">✓ ${ok[q.ans]}) ${q.opts[q.ans]}</span>
-                 ${isW?`<span style="color:var(--err)">✗ Your: ${ok[q.chosen]}) ${q.opts[q.chosen]}</span>`:''}
-                 ${q.chosen===null?'<span style="color:var(--muted)">Not attempted</span>':''}`}
-          </div>
-          ${q.sol?`<div class="sol-box"><strong>💡 Solution:</strong> ${q.sol}</div>`:''}
+  const okLabels=['A','B','C','D'];
+  review.forEach((q,gq)=>{
+    const isC=q.status==='correct', isW=q.status==='wrong';
+    const cls3=q.status==='skip'?'skip':isC?'ok':'wrong';
+    const icon=q.status==='skip'?'○':isC?'✓':'✗';
+    const markColor=isC?'var(--ok)':isW&&(isNEET||isJEE)?'var(--err)':'var(--muted)';
+    const markLabel=isC?`+${SUBS[q.section]?.marks||1}`:isW&&(isNEET||isJEE)?`−${SUBS[q.section]?.neg||0}`:'0';
+    const d=document.createElement('div');
+    d.className=`ritem ${cls3}`;
+    d.innerHTML=`
+      <div class="ric">${icon}</div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:3px">${SUBS[q.section]?.name} · Q${q.index+1} · Global Q${gq+1}</div>
+        <div style="font-size:13px;line-height:1.55">${q.q.substring(0,140)}${q.q.length>140?'…':''}</div>
+        ${q.img?`<img src="${q.img}" style="max-width:100%;max-height:120px;border-radius:6px;margin-top:6px">`:'' }
+        <div style="font-size:12px;margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">
+          ${q.isNumerical
+            ?`<span style="color:var(--ok);font-weight:700">✓ Correct: ${q.numericalAns||q.ans}</span>
+               ${q.given!=null&&q.given!==''?`<span style="color:${isC?'var(--ok)':'var(--err)'}">Your answer: ${q.given}</span>`:'<span style="color:var(--muted)">Not attempted</span>'}`
+            :`<span style="color:var(--ok);font-weight:700">✓ ${okLabels[q.ans]}) ${(q.opts||[])[q.ans]||''}</span>
+               ${isW?`<span style="color:var(--err)">✗ Your: ${okLabels[q.given]}) ${(q.opts||[])[q.given]||''}</span>`:''}
+               ${q.given===null?'<span style="color:var(--muted)">Not attempted</span>':''}`}
         </div>
-        <div style="font-size:13px;font-weight:800;color:${markColor};white-space:nowrap">${markChange}</div>`;
-      al.appendChild(d); gq++;
-    });
+        ${q.sol?`<div class="sol-box"><strong>💡 Solution:</strong> ${q.sol}</div>`:''}
+      </div>
+      <div style="font-size:13px;font-weight:800;color:${markColor};white-space:nowrap">${markLabel}</div>`;
+    al.appendChild(d);
   });
-
-  saveScore(curTest.name, curTest.stream||'pcm', totScore, totalMarks, totC, totW, totS);
   showScr('result-scr');
 }
 
-// ═══════════════════════ PAYMENT — RAZORPAY ═══════════════════════
-// Key is set from Admin Panel → Settings → Razorpay Settings
-// It is automatically synced here when admin saves
+// ══════════════════════════════════════════════
+// PAYMENT — server-verified Razorpay
+// ══════════════════════════════════════════════
 function getRzpKeyId(){
-  // 1. Try admin-pushed settings (most up to date)
   try{
     const sd=JSON.parse(localStorage.getItem('mhtcet_student_data')||'{}');
-    if(sd.settings?.rzp_key_id && sd.settings.rzp_key_id.startsWith('rzp_')) return sd.settings.rzp_key_id;
+    if(sd.settings?.rzp_key_id&&sd.settings.rzp_key_id.startsWith('rzp_')) return sd.settings.rzp_key_id;
   }catch(e){}
-  // 2. Try direct admin config store
-  try{
-    const cfg=JSON.parse(localStorage.getItem('rzp_admin_config')||'{}');
-    if(cfg.keyId && cfg.keyId.startsWith('rzp_')) return cfg.keyId;
-  }catch(e){}
-  // 3. No valid key found — return empty; UI will show 'not configured'
   return '';
 }
 
 function unlockTest(id){
-  // ── SECURITY: removed plain localStorage bypass; token is re-verified in loadData ──
   pendingPaid=id;
+  const t=tests.find(tt=>tt.id===id);
   document.getElementById('pay-amount').textContent=settings.price||30;
   document.getElementById('pay-processing').style.display='none';
   document.getElementById('pay-success-msg').style.display='none';
   document.getElementById('rzp-pay-btn').style.display='block';
-  // Warn if Razorpay key not yet configured
+  document.getElementById('rzp-pay-btn').disabled=false;
   const rzpKey=getRzpKeyId();
-  const rzpWarn=document.getElementById('rzp-not-configured');
-  if(rzpWarn) rzpWarn.style.display=(!rzpKey||rzpKey.length<10)?'block':'none';
-  // Disable button if Razorpay not yet configured
-  const rzpBtn = document.getElementById('rzp-pay-btn');
-  if(rzpBtn) rzpBtn.disabled = (!rzpKey || rzpKey.length < 10);
+  const warn=document.getElementById('rzp-not-configured');
+  if(warn) warn.style.display=(!rzpKey||rzpKey.length<10)?'block':'none';
   document.getElementById('pay-modal').classList.add('on');
 }
 
-function _doUnlockAll(serverToken){
-  // ── SECURITY: Only unlock if server issued a valid token ──
-  if(!serverToken || typeof serverToken !== 'string' || serverToken.length < 16){
-    toast('⚠ Unlock failed: invalid server token. Contact support.');
-    return;
-  }
-  // Store token so the app can re-verify on next page load
-  const tokenRecord = { token: serverToken, mobile: currentUser?.mobile || '', ts: Date.now() };
-  localStorage.setItem('mhtcet_unlock_token', JSON.stringify(tokenRecord));
-  tests.forEach(t=>{ t.unlocked=true; });
-  if(currentUser){
-    const users=getUsers();
-    const idx=users.findIndex(u=>u.mobile===currentUser.mobile);
-    if(idx>=0){users[idx].paid=true;saveUsers(users);currentUser=users[idx];localStorage.setItem('mhtcet_current_user',JSON.stringify(currentUser));}
-  }
-  closeModal('pay-modal'); renderHome(); toast('✅ Payment verified! All tests unlocked!');
-  const t=tests.find(tt=>tt.id===pendingPaid); if(t&&(t.qbank?.[0]?.length||t.qbank?.[1]?.length)) openInst(pendingPaid);
-}
-
 function startRazorpayPayment(){
+  const rzpKey=getRzpKeyId();
+  if(!rzpKey||rzpKey.length<10){ toast('⚠ Payment not configured. Contact admin.'); return; }
   const amountPaise=Math.round((parseFloat(settings.price)||30)*100);
   const options={
-    key:getRzpKeyId(),
+    key:rzpKey,
     amount:amountPaise,
     currency:'INR',
     name:'PrepXpert',
     description:'Unlock All Paid Tests',
     prefill:{name:currentUser?.name||'',contact:currentUser?.mobile||''},
     theme:{color:'#1a237e'},
-    handler:function(response){
-      // ── SECURITY: Verify payment with backend before unlocking ──
+    handler:async function(response){
       document.getElementById('pay-processing').style.display='block';
       document.getElementById('rzp-pay-btn').style.display='none';
-      fetchWithRetry(`${API}/verify-payment`, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-          razorpay_payment_id: response.razorpay_payment_id,
-          razorpay_order_id:   response.razorpay_order_id   || '',
-          razorpay_signature:  response.razorpay_signature  || '',
-          userMobile: currentUser?.mobile || ''
-        })
-      })
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('pay-processing').style.display='none';
+      try{
+        const r=await fetchWithRetry(API+'/verify-payment',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id:   response.razorpay_order_id||'',
+            razorpay_signature:  response.razorpay_signature||'',
+            userMobile: currentUser?.mobile||''
+          })
+        });
+        const data=await r.json();
         if(data.success){
+          // Store server-issued token (NOT a plain flag)
+          localStorage.setItem('mhtcet_unlock_token', JSON.stringify({token:data.token, mobile:currentUser?.mobile||''}));
+          document.getElementById('pay-processing').style.display='none';
           document.getElementById('pay-success-msg').style.display='block';
-          setTimeout(()=>{ _doUnlockAll(data.token); }, 1200);
+          setTimeout(()=>_doUnlockAll(),1200);
         } else {
+          document.getElementById('pay-processing').style.display='none';
           document.getElementById('rzp-pay-btn').style.display='block';
-          toast('⚠ Payment verification failed: ' + (data.message||'Please contact support.'));
+          toast('⚠ Payment verification failed: '+(data.message||'Contact support.'));
         }
-      })
-      .catch(()=>{
+      }catch(e){
         document.getElementById('pay-processing').style.display='none';
         document.getElementById('rzp-pay-btn').style.display='block';
-        toast('⚠ Could not verify payment. Contact support with your payment ID: '+response.razorpay_payment_id);
-      });
-    },
-    modal:{
-      ondismiss:function(){
-        document.getElementById('pay-processing').style.display='none';
-        document.getElementById('rzp-pay-btn').style.display='block';
+        toast('⚠ Could not verify. Contact support with payment ID: '+response.razorpay_payment_id);
       }
-    }
+    },
+    modal:{ondismiss:function(){
+      document.getElementById('pay-processing').style.display='none';
+      document.getElementById('rzp-pay-btn').style.display='block';
+    }}
   };
   if(typeof Razorpay==='undefined'){
     const s=document.createElement('script');
     s.src='https://checkout.razorpay.com/v1/checkout.js';
     s.onload=()=>_openRzp(options);
-    s.onerror=()=>{ document.getElementById('rzp-pay-btn').style.display='block'; document.getElementById('pay-processing').style.display='none'; toast('⚠ Could not load payment. Check internet.'); };
+    s.onerror=()=>toast('⚠ Could not load payment gateway. Check internet.');
     document.head.appendChild(s);
   } else { _openRzp(options); }
 }
@@ -1596,265 +1507,298 @@ function _openRzp(options){
     rzp.on('payment.failed',function(resp){
       document.getElementById('pay-processing').style.display='none';
       document.getElementById('rzp-pay-btn').style.display='block';
-      toast('❌ Payment failed: '+(resp.error?.description||'Please try again.'));
+      toast('❌ Payment failed: '+(resp.error?.description||'Try again.'));
     });
     rzp.open();
   }catch(e){
     document.getElementById('pay-processing').style.display='none';
     document.getElementById('rzp-pay-btn').style.display='block';
-    toast('⚠ Payment error. Please try again.');
+    toast('⚠ Payment error. Try again.');
   }
 }
 
-// ═══════════════════════ MOBILE NAV HELPERS ═══════════════════════
-function toggleMobNav(){
-  const sb=document.getElementById('exam-sb');
-  if(!sb)return;
-  const isOpen=sb.classList.contains('mob-open');
-  sb.classList.toggle('mob-open',!isOpen);
-  document.getElementById('mob-nav-btn').textContent=!isOpen?'✕ Close Nav':'☰ Nav';
-}
-function checkMobNav(){
-  const btn=document.getElementById('mob-nav-btn');
-  if(!btn)return;
-  if(window.innerWidth<=768){
-    btn.style.display='inline-flex';
-  } else {
-    btn.style.display='none';
-    const sb=document.getElementById('exam-sb');
-    if(sb){sb.classList.remove('mob-open');sb.style.display='';}
+function _doUnlockAll(){
+  tests.forEach(t=>t.unlocked=true);
+  if(currentUser){
+    const users=getUsers();
+    const idx=users.findIndex(u=>u.mobile===currentUser.mobile);
+    if(idx>=0){users[idx].paid=true;saveUsers(users);currentUser=users[idx];localStorage.setItem('mhtcet_current_user',JSON.stringify(currentUser));}
   }
+  closeModal('pay-modal'); renderHome(); toast('✅ Payment verified! All tests unlocked!');
+  const t=tests.find(tt=>tt.id===pendingPaid); if(t&&t.totalQ) openInst(pendingPaid);
 }
-window.addEventListener('resize',checkMobNav);
 
-// ═══════════════════════ SECURITY ENGINE ═══════════════════════
-/*(function(){
-  // Block right-click
-  document.addEventListener('contextmenu', e => e.preventDefault());
-  // Block DevTools shortcuts & view-source
-  document.addEventListener('keydown', e => {
-    if(e.key==='F12'){ e.preventDefault(); return false; }
-    if(e.ctrlKey && e.shiftKey && ['i','j','c','k','s','u'].includes(e.key.toLowerCase())){ e.preventDefault(); return false; }
-    if(e.ctrlKey && ['u','s'].includes(e.key.toLowerCase())){ e.preventDefault(); return false; }
-    if(e.ctrlKey && e.key==='p'){ e.preventDefault(); if(examActive)showScreenshotWarn(); return false; }
-    if(e.key==='PrintScreen'){ e.preventDefault(); if(examActive)showScreenshotWarn(); return false; }
-  });
-  // DevTools size detection — disabled on mobile to avoid false positives (address bar changes size)
-  const _isMob=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||('ontouchstart' in window);
-  let devOpen=false;
-  if(!_isMob){
-    //setInterval(()=>{
-      //if(window.outerWidth-window.innerWidth>160||window.outerHeight-window.innerHeight>160){
-      if(!devOpen){devOpen=true;document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#1a237e;color:#fff;font-size:20px;font-weight:700;flex-direction:column;gap:10px"><div>🔒 Access Denied</div><div style="font-size:13px;font-weight:400;color:rgba(255,255,255,.65)">Close developer tools to use PrepXpert.</div></div>';}
-      } else { if(devOpen) location.reload(); }
-    },800);
-  }*/
-  // Block copy of content
-  document.addEventListener('copy', e=>{ if(examActive){e.clipboardData.setData('text/plain','');e.preventDefault();} });
-  document.addEventListener('cut',  e=>{ if(examActive){e.clipboardData.setData('text/plain','');e.preventDefault();} });
-  // Block drag
-  document.addEventListener('dragstart', e=>e.preventDefault());
-  // Block print
-  window.addEventListener('beforeprint', e=>{ e.preventDefault(); window.stop(); });
-  // Block view-source via URL
-  if(location.href.startsWith('view-source:')) location.replace('about:blank');
+// ══════════════════════════════════════════════
+// AUTH — users stored in localStorage (hashed passwords)
+// ══════════════════════════════════════════════
+const LOGIN_MAX=5, LOGIN_LOCK_MS=10*60*1000;
+function getLoginLock(){try{return JSON.parse(sessionStorage.getItem('_llock')||'{}');}catch(e){return{};}}
+function saveLoginLock(s){sessionStorage.setItem('_llock',JSON.stringify(s));}
+function getUsers(){try{return JSON.parse(localStorage.getItem('mhtcet_users')||'[]');}catch(e){return[];}}
+function saveUsers(u){localStorage.setItem('mhtcet_users',JSON.stringify(u));}
 
-
-// --- SHA-256 ---
 async function sha256(msg){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(msg));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-
-// --- Login brute-force lockout ---
-const LOGIN_MAX = 5;
-const LOGIN_LOCK_MS = 10 * 60 * 1000;
-function getLoginLock(){ try{ return JSON.parse(sessionStorage.getItem('_llock')||'{}'); }catch(e){ return {}; } }
-function saveLoginLock(s){ sessionStorage.setItem('_llock', JSON.stringify(s)); }
-
-function getUsers(){ try{return JSON.parse(localStorage.getItem('mhtcet_users')||'[]');}catch(e){return[];} }
-function saveUsers(u){ localStorage.setItem('mhtcet_users', JSON.stringify(u)); }
+function simpleHash(str){let h=0;for(let i=0;i<str.length;i++)h=(Math.imul(31,h)+str.charCodeAt(i))|0;return h.toString(36);}
 
 async function doLogin(){
-  const lock = getLoginLock();
-  const now  = Date.now();
-  if(lock.until && now < lock.until){
-    const mins = Math.ceil((lock.until-now)/60000);
-    showLErr(`Too many failed attempts. Wait ${mins} min.`);
-    return;
-  }
-  const user = document.getElementById('l-user').value.trim();
-  const pass = document.getElementById('l-pass').value;
-  if(!user||!pass){ showLErr('Enter username and password.'); return; }
-  const users = getUsers();
-  const found = users.find(u=>u.mobile===user||u.name.toLowerCase()===user.toLowerCase());
+  const lock=getLoginLock(); const now=Date.now();
+  if(lock.until&&now<lock.until){showLErr(`Too many attempts. Wait ${Math.ceil((lock.until-now)/60000)} min.`);return;}
+  const user=document.getElementById('l-user').value.trim();
+  const pass=document.getElementById('l-pass').value;
+  if(!user||!pass){showLErr('Enter username and password.');return;}
+  const users=getUsers();
+  const found=users.find(u=>u.mobile===user||u.name.toLowerCase()===user.toLowerCase());
   if(!found){
     const a=(lock.attempts||0)+1;
-    if(a>=LOGIN_MAX) saveLoginLock({attempts:a,until:now+LOGIN_LOCK_MS});
+    if(a>=LOGIN_MAX)saveLoginLock({attempts:a,until:now+LOGIN_LOCK_MS});
     else saveLoginLock({attempts:a});
-    showLErr(`Account not found. (${a}/${LOGIN_MAX} attempts)`); return;
+    showLErr(`Account not found. (${a}/${LOGIN_MAX})`);return;
   }
-  const inpHash = await sha256(pass);
-  // Support both old simpleHash and new sha256
-  const match = found.passwordHash===inpHash || found.passwordHash===simpleHash(pass);
+  const inpHash=await sha256(pass);
+  const match=found.passwordHash===inpHash||found.passwordHash===simpleHash(pass);
   if(!match){
     const a=(lock.attempts||0)+1;
-    if(a>=LOGIN_MAX) saveLoginLock({attempts:a,until:now+LOGIN_LOCK_MS});
+    if(a>=LOGIN_MAX)saveLoginLock({attempts:a,until:now+LOGIN_LOCK_MS});
     else saveLoginLock({attempts:a});
-    showLErr(`Incorrect password. (${a}/${LOGIN_MAX} attempts)`); return;
+    showLErr(`Wrong password. (${a}/${LOGIN_MAX})`);return;
   }
-  // Upgrade hash to SHA-256 if still using old simpleHash
-  if(found.passwordHash===simpleHash(pass) && found.passwordHash!==inpHash){
-    const idx=users.indexOf(found);
-    users[idx].passwordHash=inpHash;
-    saveUsers(users);
+  if(found.passwordHash===simpleHash(pass)&&found.passwordHash!==inpHash){
+    const idx=users.indexOf(found);users[idx].passwordHash=inpHash;saveUsers(users);
   }
   saveLoginLock({});
-  currentUser=found; localStorage.setItem('mhtcet_current_user',JSON.stringify(found)); enterApp();
+  currentUser=found;
+  localStorage.setItem('mhtcet_current_user',JSON.stringify(found));
+  enterApp();
 }
 
 async function doRegister(){
-  const name   = document.getElementById('r-name').value.trim();
-  const mobile = document.getElementById('r-mobile').value.trim();
-  const pass   = document.getElementById('r-pass').value;
-  const pass2  = document.getElementById('r-pass2').value;
-  const terms  = document.getElementById('r-terms').checked;
-  if(!name){ showLErr('Enter your full name.'); return; }
-  if(!/^\d{10}$/.test(mobile)){ showLErr('Enter a valid 10-digit mobile number.'); return; }
-  if(pass.length<8){ showLErr('Password must be at least 8 characters.'); return; }
-  if(!/[A-Z]/.test(pass)){ showLErr('Password must have at least 1 uppercase letter.'); return; }
-  if(!/[0-9]/.test(pass)){ showLErr('Password must have at least 1 number.'); return; }
-  if(pass!==pass2){ showLErr('Passwords do not match.'); return; }
-  if(!terms){ showLErr('Please accept the Terms & Conditions.'); return; }
+  const name=document.getElementById('r-name').value.trim();
+  const mobile=document.getElementById('r-mobile').value.trim();
+  const pass=document.getElementById('r-pass').value;
+  const pass2=document.getElementById('r-pass2').value;
+  const terms=document.getElementById('r-terms').checked;
+  if(!name){showLErr('Enter your full name.');return;}
+  if(!/^\d{10}$/.test(mobile)){showLErr('Enter a valid 10-digit mobile.');return;}
+  if(pass.length<8){showLErr('Password must be at least 8 characters.');return;}
+  if(!/[A-Z]/.test(pass)){showLErr('Password must have at least 1 uppercase letter.');return;}
+  if(!/[0-9]/.test(pass)){showLErr('Must have at least 1 number.');return;}
+  if(pass!==pass2){showLErr('Passwords do not match.');return;}
+  if(!terms){showLErr('Please accept Terms & Conditions.');return;}
   const users=getUsers();
-  if(users.find(u=>u.mobile===mobile)){ showLErr('Mobile already registered. Please sign in.'); return; }
-  const hash = await sha256(pass);
+  if(users.find(u=>u.mobile===mobile)){showLErr('Mobile already registered. Sign in.');return;}
+  const hash=await sha256(pass);
   const newUser={name,mobile,passwordHash:hash,joinedAt:new Date().toISOString(),scores:[]};
-  users.push(newUser); saveUsers(users);
-  currentUser=newUser; localStorage.setItem('mhtcet_current_user',JSON.stringify(newUser));
-  toast('✅ Account created! Welcome, '+name); enterApp();
+  users.push(newUser);saveUsers(users);
+  currentUser=newUser;
+  localStorage.setItem('mhtcet_current_user',JSON.stringify(newUser));
+  toast('✅ Account created! Welcome, '+name);
+  enterApp();
 }
+
 function doLogout(){if(!confirm('Sign out?'))return;currentUser=null;localStorage.removeItem('mhtcet_current_user');showLoginScreen();}
+
 function enterApp(){
   document.getElementById('login-scr').style.display='none';
   document.getElementById('main-hdr').style.display='flex';
   document.querySelectorAll('.scr').forEach(s=>s.style.display='');
-  if(currentUser)document.getElementById('hdr-user').textContent='👤 '+currentUser.name.split(' ')[0];
-  // ── SECURITY: do NOT honour localStorage 'mhtcet_full_access' — token re-verified in loadData ──
-  loadData(); renderHero(); renderSubStrip(); renderHome(); showScr('hs');
+  if(currentUser) document.getElementById('hdr-user').textContent='👤 '+currentUser.name.split(' ')[0];
+  loadTests();  // ← Loads from backend, not localStorage
+  showScr('hs');
 }
+
 function showLoginScreen(){
   document.getElementById('login-scr').style.display='flex';
   document.getElementById('main-hdr').style.display='none';
   document.querySelectorAll('.scr').forEach(s=>{s.classList.remove('on');s.style.display='none';});
 }
 
-// ═══════════════════════ RANKING ═══════════════════════
-function saveScore(testName,stream,score,totalMarks,correct,wrong,skipped){
-  if(!currentUser)return;
-  const users=getUsers(); const idx=users.findIndex(u=>u.mobile===currentUser.mobile); if(idx<0)return;
-  if(!users[idx].scores)users[idx].scores=[];
-  const entry={testName,stream,score,totalMarks,correct,wrong,skipped,accuracy:(correct+wrong)>0?Math.round(correct/(correct+wrong)*100):0,date:new Date().toLocaleDateString('en-IN'),ts:Date.now()};
-  users[idx].scores.push(entry); saveUsers(users);
-  try{const flat=JSON.parse(localStorage.getItem('mhtcet_scores')||'[]');flat.push({mobile:currentUser.mobile,name:currentUser.name,...entry});if(flat.length>2000)flat.splice(0,flat.length-2000);localStorage.setItem('mhtcet_scores',JSON.stringify(flat));}catch(e){}
-  currentUser=users[idx]; localStorage.setItem('mhtcet_current_user',JSON.stringify(currentUser));
+// ══════════════════════════════════════════════
+// LEADERBOARD / RANKING — from backend
+// ══════════════════════════════════════════════
+function showRanking(){
+  showScr('rank-scr');
+  const tf=document.getElementById('rank-test-filter');
+  tf.innerHTML='<option value="all">All Tests</option>';
+  tests.forEach(t=>{const o=document.createElement('option');o.value=t.name;o.textContent=t.name;tf.appendChild(o);});
+  renderRanking();
 }
 
-function getAllScores(testFilter='all',streamFilter='all'){
-  const users=getUsers(); const rows=[];
-  users.forEach(u=>{ if(!u.scores||!u.scores.length)return; let filtered=u.scores; if(testFilter!=='all')filtered=filtered.filter(s=>s.testName===testFilter); if(streamFilter!=='all')filtered=filtered.filter(s=>s.stream===streamFilter); if(!filtered.length)return; const best=filtered.reduce((a,b)=>b.score>a.score?b:a,filtered[0]); rows.push({name:u.name,mobile:u.mobile,score:best.score,totalMarks:best.totalMarks,testName:best.testName,stream:best.stream,date:best.date,accuracy:best.accuracy}); });
-  rows.sort((a,b)=>b.score!==a.score?b.score-a.score:b.accuracy-a.accuracy); return rows;
+async function renderRanking(){
+  const testFilter=document.getElementById('rank-test-filter').value;
+  const streamFilter=document.getElementById('rank-stream-filter').value;
+  const list=document.getElementById('rank-list');
+  list.innerHTML='<div class="empty-rank">⏳ Loading…</div>';
+  try{
+    const r=await fetchWithRetry(API+'/results');
+    let rows=await r.json();
+    if(streamFilter!=='all') rows=rows.filter(r=>r.type===streamFilter.toUpperCase());
+    if(testFilter!=='all') rows=rows.filter(r=>r.testName===testFilter);
+    rows.sort((a,b)=>b.score-a.score);
+    if(!rows.length){list.innerHTML='<div class="empty-rank">🏆 No scores yet.</div>';document.getElementById('my-rank-card').style.display='none';return;}
+    const myIdx=currentUser?rows.findIndex(r=>r.name===currentUser.name):-1;
+    if(myIdx>=0){
+      const my=rows[myIdx];
+      document.getElementById('my-rank-card').style.display='flex';
+      document.getElementById('my-rank-num').textContent='#'+(myIdx+1);
+      document.getElementById('my-rank-name').textContent=my.name+' (You)';
+      document.getElementById('my-rank-meta').textContent=(my.type||'')+' · '+my.date;
+      document.getElementById('my-rank-score').textContent=my.score+'/'+my.total;
+    } else { document.getElementById('my-rank-card').style.display='none'; }
+    const medals=['🥇','🥈','🥉'];
+    let html=`<table class="rank-table"><thead><tr><th>Rank</th><th>Student</th><th>Exam</th><th>Score</th><th>Date</th></tr></thead><tbody>`;
+    rows.slice(0,50).forEach((r,i)=>{
+      const isMe=currentUser&&r.name===currentUser.name;
+      const rankDisp=i<3?`<span class="rank-badge rank-${i+1}">${medals[i]}</span>`:`<span class="rank-badge rank-n">${i+1}</span>`;
+      html+=`<tr class="${isMe?'my-rank-row':''}"><td>${rankDisp}</td><td><strong>${r.name}</strong>${isMe?' <span style="background:#c8e6c9;color:#1b5e20;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">YOU</span>':''}</td><td style="font-size:12px;color:var(--muted)">${r.type||'—'}</td><td><strong style="color:var(--ok)">${r.score}</strong>/${r.total}</td><td style="font-size:12px;color:var(--muted)">${r.date||''}</td></tr>`;
+    });
+    html+=`</tbody></table>`;
+    list.innerHTML=html;
+  }catch(e){
+    list.innerHTML='<div class="empty-rank">⚠ Could not load rankings.</div>';
+  }
 }
 
+// ══════════════════════════════════════════════
+// STUDENT DASHBOARD
+// ══════════════════════════════════════════════
+let sdAllResults=[], sdCurrentTab='PCM', sdCurrentStudent=null;
+
+function showStudentDash(){
+  showScr('student-scr');
+  const lb=document.getElementById('sd-lboard-body');
+  lb.innerHTML='<div class="sd-empty">⏳ Loading…</div>';
+  fetchWithRetry(API+'/results')
+    .then(r=>r.json())
+    .then(data=>{
+      sdAllResults=data;
+      sdRenderLeaderboard('PCM');
+      if(currentUser?.name){
+        document.getElementById('sd-name-input').value=currentUser.name;
+        sdFindStudent();
+      }
+    })
+    .catch(()=>{ lb.innerHTML='<div class="sd-empty">⚠ Could not connect. Wait 30s and retry.</div>'; });
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  const inp=document.getElementById('sd-name-input');
+  if(inp) inp.addEventListener('keydown',e=>{if(e.key==='Enter')sdFindStudent();});
+});
+
+function sdFindStudent(){
+  const query=(document.getElementById('sd-name-input').value||'').trim().toLowerCase();
+  const card=document.getElementById('sd-result-card');
+  const nf=document.getElementById('sd-not-found');
+  card.className='sd-result-card'; nf.className='sd-not-found';
+  if(!query)return;
+  const match=sdAllResults.find(r=>r.name.toLowerCase()===query)||sdAllResults.find(r=>r.name.toLowerCase().includes(query));
+  if(!match){nf.className='sd-not-found show';sdCurrentStudent=null;sdRenderLeaderboard(sdCurrentTab);return;}
+  sdCurrentStudent=match;
+  const sameType=sdAllResults.filter(r=>(r.type||'').toUpperCase()===(match.type||'').toUpperCase()).sort((a,b)=>b.score-a.score);
+  const rank=sameType.findIndex(r=>r.name===match.name)+1;
+  const pct=match.total?Math.round((match.score/match.total)*100):0;
+  document.getElementById('sd-rc-name').textContent=match.name;
+  document.getElementById('sd-rc-type').textContent='📋 '+(match.type||'—')+' Exam';
+  document.getElementById('sd-rc-rank').textContent='#'+rank;
+  document.getElementById('sd-rc-score').textContent=match.score+'/'+match.total;
+  document.getElementById('sd-rc-pct').textContent=pct+'%';
+  document.getElementById('sd-rc-total').textContent=sameType.length;
+  const t=(match.type||'').toUpperCase();
+  const colourMap={NEET:'neet-card',JEE:'jee-card',PCB:'pcb-card'};
+  card.className='sd-result-card show '+(colourMap[t]||'');
+  const tabs=document.querySelectorAll('.sd-tab');
+  const tabMap={PCM:0,PCB:1,NEET:2,JEE:3};
+  sdSwitchTab(t,tabs[tabMap[t]||0]);
+}
+
+function sdSwitchTab(type,btn){
+  sdCurrentTab=type;
+  document.querySelectorAll('.sd-tab').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  sdRenderLeaderboard(type);
+}
+
+function sdRenderLeaderboard(type){
+  const el=document.getElementById('sd-lboard-body');
+  const filtered=sdAllResults.filter(r=>(r.type||'').toUpperCase()===type).sort((a,b)=>b.score-a.score);
+  if(!filtered.length){el.innerHTML='<div class="sd-empty">No results yet for '+type+'</div>';return;}
+  const rows=filtered.map((s,i)=>{
+    const rank=i+1,pct=s.total?Math.round((s.score/s.total)*100):0;
+    const isMe=sdCurrentStudent&&s.name===sdCurrentStudent.name&&(s.type||'').toUpperCase()===(sdCurrentStudent.type||'').toUpperCase();
+    const rc=rank===1?'sdr1':rank===2?'sdr2':rank===3?'sdr3':'sdrn';
+    const medal=rank===1?'🥇 ':rank===2?'🥈 ':rank===3?'🥉 ':'';
+    return `<tr class="${isMe?'me':''}"><td><span class="sd-rbadge ${rc}">${rank}</span></td>
+      <td>${medal}${s.name||'Unknown'}${isMe?'<span class="sd-you">YOU</span>':''}</td>
+      <td><strong>${s.score}/${s.total}</strong><div class="sd-pbar"><div class="sd-pfill" style="width:${pct}%"></div></div></td>
+      <td>${pct}%</td><td style="font-size:11px;color:#9ca3af">${s.date||'—'}</td></tr>`;
+  }).join('');
+  el.innerHTML=`<table class="sd-table"><thead><tr><th>Rank</th><th>Name</th><th>Score</th><th>%</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`;
+  setTimeout(()=>{const hl=el.querySelector('.me');if(hl)hl.scrollIntoView({behavior:'smooth',block:'center'});},100);
+}
+
+// ══════════════════════════════════════════════
+// CONTACT
+// ══════════════════════════════════════════════
 function showContactUs(){
   const contact=settings.contact||{};
-  const wa=(contact.wa||'').trim();
-  const tg=(contact.tg||'').trim();
+  const wa=(contact.wa||'').trim(), tg=(contact.tg||'').trim();
   const waMsg=encodeURIComponent((contact.waMsg||'Hi, I need help with PrepXpert').trim());
-  const heading=contact.heading||'Need Help? Contact Us!';
-
-  document.getElementById('contact-heading-title').textContent='💬 '+heading;
-
+  document.getElementById('contact-heading-title').textContent='💬 '+(contact.heading||'Need Help? Contact Us!');
   const container=document.getElementById('contact-btns-container');
-  if(!wa && !tg){
-    container.innerHTML=`<div class="contact-not-configured">⏳ Contact details not yet configured by admin.<br><span style="font-size:12px">Please sync tests or check back later.</span></div>`;
+  if(!wa&&!tg){
+    container.innerHTML=`<div class="contact-not-configured">⏳ Contact details not yet configured.<br><span style="font-size:12px">Please check back later.</span></div>`;
   } else {
     let html='';
-    if(wa){
-      html+=`<a href="https://wa.me/${wa}?text=${waMsg}" target="_blank" class="contact-btn-wa">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-        Chat on WhatsApp
-      </a>`;
-    }
-    if(tg){
-      const isNum=/^\d+$/.test(tg);
-      const tgHref=isNum?`https://t.me/+${tg}`:`https://t.me/${tg}`;
-      html+=`<a href="${tgHref}" target="_blank" class="contact-btn-tg">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-        Message on Telegram
-      </a>`;
-    }
+    if(wa) html+=`<a href="https://wa.me/${wa}?text=${waMsg}" target="_blank" class="contact-btn-wa"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>Chat on WhatsApp</a>`;
+    if(tg){const isNum=/^\d+$/.test(tg);html+=`<a href="${isNum?`https://t.me/+${tg}`:`https://t.me/${tg}`}" target="_blank" class="contact-btn-tg"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>Message on Telegram</a>`;}
     container.innerHTML=html;
   }
   showScr('contact-scr');
 }
 
-function showRanking(){
-  const tf=document.getElementById('rank-test-filter'); tf.innerHTML='<option value="all">All Tests</option>';
-  tests.forEach(t=>{const o=document.createElement('option');o.value=t.name;o.textContent=t.name;tf.appendChild(o);});
-  renderRanking(); showScr('rank-scr');
+// ══════════════════════════════════════════════
+// MOBILE NAV
+// ══════════════════════════════════════════════
+function toggleMobNav(){
+  const sb=document.getElementById('exam-sb');if(!sb)return;
+  const open=sb.classList.contains('mob-open');
+  sb.classList.toggle('mob-open',!open);
+  document.getElementById('mob-nav-btn').textContent=!open?'✕ Close':'☰ Nav';
 }
-
-function renderRanking(){
-  const testFilter=document.getElementById('rank-test-filter').value;
-  const streamFilter=document.getElementById('rank-stream-filter').value;
-  const rows=getAllScores(testFilter,streamFilter);
-  const list=document.getElementById('rank-list');
-  if(!rows.length){list.innerHTML='<div class="empty-rank">🏆 No scores yet.<br><span style="font-size:12px">Complete a test to appear on the leaderboard!</span></div>';document.getElementById('my-rank-card').style.display='none';return;}
-  const myIdx=currentUser?rows.findIndex(r=>r.mobile===currentUser.mobile):-1;
-  const myRank=myIdx>=0?myIdx+1:null;
-  if(myRank&&currentUser){
-    const myRow=rows[myIdx];
-    document.getElementById('my-rank-card').style.display='flex';
-    document.getElementById('my-rank-num').textContent='#'+myRank;
-    document.getElementById('my-rank-name').textContent=myRow.name+' (You)';
-    document.getElementById('my-rank-meta').textContent=myRow.testName+' · '+myRow.stream.toUpperCase()+' · '+myRow.date+' · Accuracy: '+myRow.accuracy+'%';
-    document.getElementById('my-rank-score').textContent=myRow.score+'/'+myRow.totalMarks;
-  } else { document.getElementById('my-rank-card').style.display='none'; }
-  const medals=['🥇','🥈','🥉'];
-  let html=`<table class="rank-table"><thead><tr><th>Rank</th><th>Student</th><th>Test</th><th>Score</th><th>Accuracy</th><th>Date</th></tr></thead><tbody>`;
-  rows.slice(0,50).forEach((r,i)=>{
-    const isMe=currentUser&&r.mobile===currentUser.mobile;
-    const rankDisp=i<3?`<span class="rank-badge rank-${i+1}">${medals[i]}</span>`:`<span class="rank-badge rank-n">${i+1}</span>`;
-    const streamTag=r.stream==='neet'?`<span style="background:#fce4ec;color:var(--neet);padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">NEET</span>`:
-      `<span style="background:#e8eaf6;padding:1px 5px;border-radius:3px;font-size:10px">${r.stream.toUpperCase()}</span>`;
-    html+=`<tr class="${isMe?'my-rank-row':''}"><td>${rankDisp}</td><td><strong>${r.name}</strong>${isMe?' <span style="background:#c8e6c9;color:#1b5e20;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">YOU</span>':''}</td><td style="font-size:12px;color:var(--muted)">${r.testName}<br>${streamTag}</td><td><strong style="color:var(--ok)">${r.score}</strong>/${r.totalMarks}</td><td>${r.accuracy}%</td><td style="font-size:12px;color:var(--muted)">${r.date}</td></tr>`;
-  });
-  html+=`</tbody></table>`;
-  list.innerHTML=html;
+function checkMobNav(){
+  const btn=document.getElementById('mob-nav-btn');if(!btn)return;
+  btn.style.display=window.innerWidth<=768?'inline-flex':'none';
+  if(window.innerWidth>768){const sb=document.getElementById('exam-sb');if(sb){sb.classList.remove('mob-open');sb.style.display='';}}
 }
+window.addEventListener('resize',checkMobNav);
 
-// ═══════════════════════ UTILS ═══════════════════════
-function closeModal(id){document.getElementById(id).classList.remove('on');}
-function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
-function showScr(id){document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));document.getElementById(id)?.classList.add('on');}
-function goHome(){if(timerInt){clearInterval(timerInt);timerInt=null;}document.getElementById('timer').style.display='none';document.getElementById('sub-btn').style.display='none';document.getElementById('home-btn').style.display='inline-flex';loadData();renderHero();renderSubStrip();renderHome();showScr('hs');}
-window.addEventListener('click',e=>{if(e.target.classList.contains('modal-ov'))closeModal(e.target.id);if(e.target.classList.contains('conf-ov'))closeModal(e.target.id);});
-
-// ═══════════════════════ EXAM INTEGRITY ═══════════════════════
-let examActive=false, screenshotWarnings=0, blurCount=0;
+// ══════════════════════════════════════════════
+// EXAM INTEGRITY
+// ══════════════════════════════════════════════
+let examActive=false, blurCount=0;
 function setExamMode(on){examActive=on;on?document.body.classList.add('exam-active'):document.body.classList.remove('exam-active');}
-function showScreenshotWarn(){screenshotWarnings++;document.getElementById('screenshot-warn').classList.add('show');}
+function showScreenshotWarn(){document.getElementById('screenshot-warn').classList.add('show');}
 function dismissScreenshotWarn(){document.getElementById('screenshot-warn').classList.remove('show');}
+document.addEventListener('copy',e=>{if(examActive){e.clipboardData.setData('text/plain','');e.preventDefault();}});
+document.addEventListener('cut',e=>{if(examActive){e.clipboardData.setData('text/plain','');e.preventDefault();}});
+document.addEventListener('dragstart',e=>e.preventDefault());
+window.addEventListener('beforeprint',e=>{e.preventDefault();window.stop();});
 document.addEventListener('visibilitychange',()=>{if(examActive&&document.hidden)console.log('tab_switch');});
 window.addEventListener('blur',()=>{if(examActive){blurCount++;if(blurCount>=3)toast('⚠ Switching apps during exam is monitored');}});
 window.addEventListener('focus',()=>{if(examActive)blurCount=Math.max(0,blurCount-1);});
 
-
-// ═══════════════════════ BOOT ═══════════════════════
-// Keep simpleHash for backward compat (existing accounts upgrade on next login)
-function simpleHash(str){ let h=0;for(let i=0;i<str.length;i++)h=(Math.imul(31,h)+str.charCodeAt(i))|0;return h.toString(36); }
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+function closeModal(id){document.getElementById(id).classList.remove('on');}
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3500);}
+function showScr(id){document.querySelectorAll('.scr').forEach(s=>s.classList.remove('on'));document.getElementById(id)?.classList.add('on');}
+function goHome(){if(timerInt){clearInterval(timerInt);timerInt=null;}document.getElementById('timer').style.display='none';document.getElementById('sub-btn').style.display='none';document.getElementById('home-btn').style.display='inline-flex';renderHero();renderSubStrip();renderHome();showScr('hs');}
+window.addEventListener('click',e=>{if(e.target.classList.contains('modal-ov'))closeModal(e.target.id);if(e.target.classList.contains('conf-ov'))closeModal(e.target.id);});
 
 function switchLoginTab(tab){
   document.getElementById('tab-login').classList.toggle('on',tab==='login');
@@ -1865,278 +1809,13 @@ function switchLoginTab(tab){
 }
 function showLErr(msg){const el=document.getElementById('lerr');el.textContent=msg;el.style.display='block';}
 
-const savedUser=localStorage.getItem('mhtcet_current_user');
-if(savedUser){try{currentUser=JSON.parse(savedUser);enterApp();}catch(e){showLoginScreen();}}
+// ══════════════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════════════
+const _savedUser=localStorage.getItem('mhtcet_current_user');
+if(_savedUser){try{currentUser=JSON.parse(_savedUser);enterApp();}catch(e){showLoginScreen();}}
 else{showLoginScreen();}
-// ============ AUTO-SYNC WITH ADMIN ============
 
-// Listen for storage changes (when admin saves data)
-window.addEventListener('storage', function(e) {
-    if (e.key === 'mhtcet_student_data' || 
-        e.key === 'mhtcet_admin_data' ||
-        e.key === 'mhtcet_full_access') {
-        
-        console.log('🔄 Admin updated data. Syncing...');
-        
-        // Show sync notification
-        showSyncNotification();
-        
-        // Reload data
-        loadData();
-        
-        // Refresh the current view
-        if (document.getElementById('hs').classList.contains('on')) {
-            renderHome();
-        }
-        
-        // Refresh tests list
-        if (typeof renderHome === 'function') {
-            renderHome();
-        }
-        
-        // Refresh rankings if open
-        if (document.getElementById('rank-scr').classList.contains('on')) {
-            if (typeof renderRanking === 'function') renderRanking();
-        }
-    }
-});
-
-// Show a nice sync notification
-function showSyncNotification() {
-    // Create notification element
-    let notif = document.getElementById('sync-notification');
-    if (!notif) {
-        notif = document.createElement('div');
-        notif.id = 'sync-notification';
-        notif.style.cssText = `
-            position: fixed;
-            top: 70px;
-            right: 20px;
-            background: #4CAF50;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: bold;
-            z-index: 9999;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            animation: slideIn 0.3s ease;
-            font-family: 'Poppins',sans-serif;
-        `;
-        document.body.appendChild(notif);
-        
-        // Add animation style
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-            @keyframes fadeOut {
-                from { opacity: 1; }
-                to { opacity: 0; }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-    
-    notif.textContent = '🔄 New tests added! Refreshing...';
-    notif.style.display = 'block';
-    
-    setTimeout(() => {
-        notif.style.animation = 'fadeOut 0.3s ease';
-        setTimeout(() => {
-            notif.style.display = 'none';
-            notif.style.animation = 'slideIn 0.3s ease';
-        }, 300);
-    }, 2000);
-}
-
-// Manual sync button - Add this to your home page
-function addSyncButton() {
-    const homeBody = document.querySelector('.home-body');
-    if (homeBody && !document.getElementById('manual-sync-btn')) {
-        const syncBtn = document.createElement('button');
-        syncBtn.id = 'manual-sync-btn';
-        syncBtn.innerHTML = '🔄 Sync Latest Tests';
-        syncBtn.className = 'btn btn-ghost btn-sm';
-        syncBtn.style.marginBottom = '15px';
-        syncBtn.onclick = () => {
-            loadData();
-            renderHome();
-            showSyncNotification();
-            toast('✅ Synced with latest data!');
-        };
-        
-        // Add after stream tabs
-        const streamTabs = document.querySelector('.stream-tabs');
-        if (streamTabs && streamTabs.nextSibling) {
-            streamTabs.parentNode.insertBefore(syncBtn, streamTabs.nextSibling);
-        }
-    }
-}
-
-// Call this after renderHome
-const originalRenderHome = renderHome;
-renderHome = function() {
-    originalRenderHome();
-    setTimeout(addSyncButton, 100);
-};
-
-// Also sync when page becomes visible (user comes back to tab)
-document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) {
-        console.log('🔄 Tab visible - checking for updates');
-        loadData();
-        if (typeof renderHome === 'function' && document.getElementById('hs').classList.contains('on')) {
-            renderHome();
-        }
-    }
-});
-
-// Initial sync button add
-setTimeout(addSyncButton, 1000);
-
-// ═══════════════════ STUDENT DASHBOARD ═══════════════════
-let sdAllResults = [];
-let sdCurrentTab = 'PCM';
-let sdCurrentStudent = null;
-
-// API constant is declared above (search for "CHANGE THIS")
-
-function showStudentDash() {
-  showScr('student-scr');
-
-  // Load results if not already loaded
-  if (!sdAllResults.length) {
-    const lbBody = document.getElementById('sd-lboard-body');
-    if (lbBody) lbBody.innerHTML = '<div class="sd-empty">⏳ Connecting to server…</div>';
-
-    fetchWithRetry(`${API}/results`)
-      .then(r => r.json())
-      .then(data => {
-        sdAllResults = data;
-        sdRenderLeaderboard('PCM');
-
-        // Pre-fill name
-        if (currentUser && currentUser.name) {
-          document.getElementById('sd-name-input').value = currentUser.name;
-          sdFindStudent();
-        }
-      })
-      .catch(() => {
-        document.getElementById('sd-lboard-body').innerHTML =
-          '<div class="sd-empty">⚠️ Could not connect to server. The backend may still be waking up — please wait 30 seconds and try again.</div>';
-      });
-
-  } else {
-    sdRenderLeaderboard(sdCurrentTab);
-
-    if (currentUser && currentUser.name && !sdCurrentStudent) {
-      document.getElementById('sd-name-input').value = currentUser.name;
-      sdFindStudent();
-    }
-  }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const inp = document.getElementById('sd-name-input');
-  if (inp) inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter') sdFindStudent();
-  });
-});
-
-function sdFindStudent() {
-  const query = (document.getElementById('sd-name-input').value || '').trim().toLowerCase();
-  const card  = document.getElementById('sd-result-card');
-  const nf    = document.getElementById('sd-not-found');
-  card.className = 'sd-result-card';
-  nf.className   = 'sd-not-found';
-  if (!query) return;
-
-  const match = sdAllResults.find(r => r.name.toLowerCase() === query)
-             || sdAllResults.find(r => r.name.toLowerCase().includes(query));
-
-  if (!match) {
-    nf.className = 'sd-not-found show';
-    sdCurrentStudent = null;
-    sdRenderLeaderboard(sdCurrentTab);
-    return;
-  }
-
-  sdCurrentStudent = match;
-  const sameType = sdAllResults
-    .filter(r => (r.type||'').toUpperCase() === (match.type||'').toUpperCase())
-    .sort((a, b) => b.score - a.score);
-  const rank = sameType.findIndex(r => r.name === match.name) + 1;
-  const pct  = match.total ? Math.round((match.score / match.total) * 100) : 0;
-
-  document.getElementById('sd-rc-name').textContent  = match.name;
-  document.getElementById('sd-rc-type').textContent  = '📋 ' + (match.type || '—') + ' Exam';
-  document.getElementById('sd-rc-rank').textContent  = '#' + rank;
-  document.getElementById('sd-rc-score').textContent = match.score + '/' + match.total;
-  document.getElementById('sd-rc-pct').textContent   = pct + '%';
-  document.getElementById('sd-rc-total').textContent = sameType.length;
-
-  const t = (match.type || '').toUpperCase();
-  const colourMap = { NEET: 'neet-card', JEE: 'jee-card', PCB: 'pcb-card' };
-  card.className = 'sd-result-card show ' + (colourMap[t] || '');
-
-  // Switch tab to student's exam
-  const tabs = document.querySelectorAll('.sd-tab');
-  const tabMap = { PCM: 0, PCB: 1, NEET: 2, JEE: 3 };
-  sdSwitchTab(t, tabs[tabMap[t] || 0]);
-}
-
-function sdSwitchTab(type, btn) {
-  sdCurrentTab = type;
-  document.querySelectorAll('.sd-tab').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  sdRenderLeaderboard(type);
-}
-
-function sdRenderLeaderboard(type) {
-  const el = document.getElementById('sd-lboard-body');
-  const filtered = sdAllResults
-    .filter(r => (r.type||'').toUpperCase() === type)
-    .sort((a, b) => b.score - a.score);
-
-  if (!filtered.length) {
-    el.innerHTML = '<div class="sd-empty">No results yet for ' + type + '</div>';
-    return;
-  }
-
-  const rows = filtered.map((s, i) => {
-    const rank = i + 1;
-    const pct  = s.total ? Math.round((s.score / s.total) * 100) : 0;
-    const isMe = sdCurrentStudent
-                 && s.name === sdCurrentStudent.name
-                 && (s.type||'').toUpperCase() === (sdCurrentStudent.type||'').toUpperCase();
-
-    const rc = rank === 1 ? 'sdr1' : rank === 2 ? 'sdr2' : rank === 3 ? 'sdr3' : 'sdrn';
-    const medal = rank === 1 ? '🥇 ' : rank === 2 ? '🥈 ' : rank === 3 ? '🥉 ' : '';
-    return `<tr class="${isMe ? 'me' : ''}">
-      <td><span class="sd-rbadge ${rc}">${rank}</span></td>
-      <td>${medal}${s.name || 'Unknown'}${isMe ? '<span class="sd-you">YOU</span>' : ''}</td>
-      <td><strong>${s.score}/${s.total}</strong>
-        <div class="sd-pbar"><div class="sd-pfill" style="width:${pct}%"></div></div>
-      </td>
-      <td>${pct}%</td>
-      <td style="font-size:11px;color:#9ca3af">${s.date || '—'}</td>
-    </tr>`;
-  }).join('');
-
-  el.innerHTML = `<table class="sd-table">
-    <thead><tr><th>Rank</th><th>Name</th><th>Score</th><th>%</th><th>Date</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-
-  setTimeout(() => {
-    const hl = el.querySelector('.me');
-    if (hl) hl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 100);
-}
-// ═════════════════════════════════════════════════════════
 </script>
 </body>
 </html>
