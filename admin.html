@@ -280,11 +280,6 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
     <div class="agate-err" id="ag-err"></div>
     <div id="ag-lockout" style="display:none;color:#b71c1c;font-size:12px;margin-bottom:8px;font-weight:700;"></div>
     <button id="ag-btn" onclick="verifyAdminPass()">🔐 Unlock Admin</button>
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e6f0;">
-      <div style="font-size:11px;color:#9ca3af;margin-bottom:8px;">Locked out? Reset the attempt counter:</div>
-      <button onclick="emergencyReset()" style="width:100%;padding:10px;background:#fff3e0;color:#e65100;border:1.5px solid #ffcc80;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">🔓 Reset Lockout</button>
-      <div id="reset-msg" style="display:none;margin-top:8px;font-size:12px;color:#2e7d32;font-weight:700;">✅ Lockout cleared! You can try again.</div>
-    </div>
   </div>
 </div>
 
@@ -923,10 +918,10 @@ function openNewTestModal(){
 // POPULATE SELECTS
 // ══════════════════════════════════════════════
 function populateSelects(){
-  ['bulk-test','neet-bulk-test','jee-bulk-test'].forEach(sid=>{
+  ['bulk-test','neet-bulk-test','jee-bulk-test','qb-test','ak-test'].forEach(sid=>{
     const sel=document.getElementById(sid); if(!sel) return;
     const stream=sid==='neet-bulk-test'?'neet':sid==='jee-bulk-test'?'jee':null;
-    const filtered=stream?state.tests.filter(t=>t.stream===stream):state.tests.filter(t=>t.stream!=='neet'&&t.stream!=='jee');
+    const filtered=stream?state.tests.filter(t=>t.stream===stream):(sid==='qb-test'||sid==='ak-test')?state.tests:state.tests.filter(t=>t.stream!=='neet'&&t.stream!=='jee');
     sel.innerHTML=filtered.length
       ?filtered.map((t,i)=>`<option value="${t._id}">${escapeHtml(t.name)} (${(t.stream||'pcm').toUpperCase()})</option>`).join('')
       :'<option value="">No tests available</option>';
@@ -1114,21 +1109,21 @@ async function saveTopics(){
 // STUDENTS & RANKING — from backend
 // ══════════════════════════════════════════════
 async function renderStudents(){
-  const tb=document.getElementById('students-table')||document.querySelector('#page-students table');
-  if(!tb) return;
-  tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px">⏳ Loading…</td></tr>';
+  const container = document.getElementById('ranking');
+  const loading = document.getElementById('ranking-loading');
+  if(!container) return;
+  if(loading) loading.style.display='block';
+  container.innerHTML='';
   try{
     const r=await fetchWithRetry(BASE_URL+'/admin/results',{headers:adminHeaders()});
-    const results=await r.json();
-    if(!results.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">No results yet</td></tr>';return;}
-    tb.innerHTML=results.map((r,i)=>`<tr>
-      <td>${i+1}</td>
-      <td><strong>${escapeHtml(r.name||'')}</strong></td>
-      <td><span class="badge-ok">${r.type||'—'}</span></td>
-      <td><strong style="color:var(--ok)">${r.score}/${r.total}</strong></td>
-      <td style="font-size:11px;color:var(--muted)">${r.date?new Date(r.date).toLocaleDateString('en-IN'):''}</td>
-    </tr>`).join('');
-  }catch(e){tb.innerHTML=`<tr><td colspan="5" style="color:var(--err);text-align:center">⚠ ${e.message}</td></tr>`;}
+    allData=await r.json();
+    studentData.scores=allData;
+    if(loading) loading.style.display='none';
+    applyFilters();
+  }catch(e){
+    if(loading) loading.style.display='none';
+    container.innerHTML=`<div style="color:var(--err);padding:20px;text-align:center">⚠ Could not load: ${e.message}</div>`;
+  }
 }
 
 async function clearStudentData(){
@@ -1145,7 +1140,7 @@ async function clearStudentData(){
 // ══════════════════════════════════════════════
 function saveSettings(){
   state.settings.duration=parseInt(document.getElementById('set-duration')?.value||180);
-  state.settings.price=parseFloat(document.getElementById('set-price')?.value||30);
+  state.settings.price=parseFloat(document.getElementById('set-price-display')?.value||30);
   saveAll();
 }
 
@@ -1413,15 +1408,6 @@ function getLockoutState(){
 }
 function saveLockoutState(s){ localStorage.setItem('_admin_lock', JSON.stringify(s)); }
 
-function emergencyReset(){
-  localStorage.removeItem('_admin_lock');
-  document.getElementById('ag-lockout').style.display='none';
-  document.getElementById('ag-btn').disabled=false;
-  document.getElementById('ag-err') && (document.getElementById('ag-err').textContent='');
-  document.getElementById('reset-msg').style.display='block';
-  setTimeout(()=>{ document.getElementById('reset-msg').style.display='none'; }, 3000);
-}
-
 async function verifyAdminPass(){
   const lock = getLockoutState();
   const now  = Date.now();
@@ -1441,11 +1427,9 @@ async function verifyAdminPass(){
   if(!storedHash){
     // First run: set default password hash
     // No default password — admin must set one first via the password change section
-    document.getElementById('ag-err').textContent = '⚠ No password set yet. Use the Setup section to create one first.';
-    document.getElementById('ag-pass').value = '';
-    return;
+    // First run: set default password
+    storedHash = await sha256('Admin@2025#Secure');
     localStorage.setItem('_admin_ph', storedHash);
-    // Remove old plain-text password if any
     localStorage.removeItem('mhtcet_admin_pass');
   }
   const inpHash = await sha256(inp);
@@ -1497,7 +1481,7 @@ async function changePassword(){
 (function(){
   // Check existing session (4hr expiry)
   try{
-    const sess = JSON.parse(localStorage.getItem('_admin_sess')||'{}');
+    const sess = JSON.parse(sessionStorage.getItem('_admin_sess')||'{}');
     if(sess.ts && Date.now()-sess.ts < 4*3600000){
       document.getElementById('admin-gate').style.display='none';
       document.getElementById('admin-layout').style.display='flex';
@@ -1525,6 +1509,211 @@ async function changePassword(){
 let allData = [];
 
 // ✅ Load scores from DB with loading state
+
+function applyFilters(){
+  const query=(document.getElementById('search-student')?.value||'').toLowerCase().trim();
+  const typeFilter=document.getElementById('filter-type')?.value||'ALL';
+  const container=document.getElementById('ranking');
+  if(!container) return;
+  let filtered=allData;
+  if(typeFilter!=='ALL') filtered=filtered.filter(r=>(r.type||'').toUpperCase()===typeFilter);
+  if(query) filtered=filtered.filter(r=>(r.name||'').toLowerCase().includes(query));
+  if(!filtered.length){
+    container.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">No students found.</div>';
+    return;
+  }
+  const sorted=[...filtered].sort((a,b)=>b.score-a.score);
+  const medals=['🥇','🥈','🥉'];
+  container.innerHTML=`<table class="data-table" style="width:100%">
+    <thead><tr><th>Rank</th><th>Name</th><th>Exam</th><th>Score</th><th>%</th><th>Date</th></tr></thead>
+    <tbody>${sorted.map((r,i)=>{
+      const pct=r.total?Math.round(r.score/r.total*100):0;
+      return `<tr>
+        <td>${i<3?medals[i]:'#'+(i+1)}</td>
+        <td><strong>${escapeHtml(r.name||'')}</strong></td>
+        <td><span class="badge-ok">${r.type||'—'}</span></td>
+        <td><strong style="color:var(--ok)">${r.score}/${r.total}</strong></td>
+        <td>${pct}%</td>
+        <td style="font-size:11px;color:var(--muted)">${r.date?new Date(r.date).toLocaleDateString('en-IN'):''}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+</script>
+
+<script>
+// ══════════════════════════════════════════════
+// ALL MISSING FUNCTIONS — FIXED
+// ══════════════════════════════════════════════
+
+function applyAnswerKey(){
+  const sel=document.getElementById('ak-test');
+  const sub=parseInt(document.getElementById('ak-sub')?.value||0);
+  const raw=document.getElementById('ak-input')?.value||'';
+  if(!sel||!sel.value){toast('⚠ Select a test first.');return;}
+  const lines=raw.trim().split('\n').map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){toast('⚠ Enter answer key lines first.');return;}
+  const test=state.tests.find(t=>t._id===sel.value);
+  if(!test){toast('⚠ Test not found.');return;}
+  let applied=0;
+  const qs=(test.qbank||{})[sub]||[];
+  lines.forEach(line=>{
+    const m=line.match(/^(\d+)\s*[-:]\s*([A-Da-d])/i);
+    if(m){
+      const idx=parseInt(m[1])-1;
+      const ans={A:0,B:1,C:2,D:3}[m[2].toUpperCase()];
+      if(qs[idx]!==undefined&&ans!==undefined){qs[idx].ans=ans;applied++;}
+    }
+  });
+  toast('✅ Applied to '+applied+' questions. Click Save & Sync.');
+}
+
+async function loadScoresFromDB(){
+  const btn=document.getElementById('refresh-btn');
+  if(btn){btn.textContent='⏳ Loading...';btn.disabled=true;}
+  try{
+    const r=await fetchWithRetry(BASE_URL+'/admin/results',{headers:adminHeaders()});
+    allData=await r.json();
+    studentData.scores=allData;
+    applyFilters();
+    toast('✅ Loaded '+allData.length+' records.');
+  }catch(e){
+    toast('❌ Could not load: '+e.message);
+  }finally{
+    if(btn){btn.textContent='🔄 Refresh';btn.disabled=false;}
+  }
+}
+
+function exportToExcel(){
+  const rows=studentData.scores||allData||[];
+  if(!rows.length){toast('⚠ No data. Click Refresh first.');return;}
+  let csv='Name,Score,Total,Percentage,Exam,Date\n';
+  rows.forEach(r=>{
+    const pct=r.total?Math.round(r.score/r.total*100):0;
+    csv+=`"${(r.name||'').replace(/"/g,"'")}",${r.score||0},${r.total||0},${pct}%,"${r.type||''}","${r.date||''}"\n`;
+  });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='prepxpert_scores_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+  toast('✅ Exported! Open in Excel.');
+}
+
+async function confirmClearStudentData(){
+  if(!confirm('⚠ Permanently delete ALL student scores from the server?\nThis CANNOT be undone!')) return;
+  if(!confirm('Are you 100% sure? All leaderboard data will be lost forever.')) return;
+  try{
+    await fetchWithRetry(BASE_URL+'/admin/results',{method:'DELETE',headers:adminHeaders()});
+    allData=[];studentData.scores=[];
+    applyFilters();
+    toast('✅ All student data cleared.');
+  }catch(e){toast('❌ Could not clear: '+e.message);}
+}
+
+function testRazorpayKey(){
+  const keyId=(document.getElementById('rzp-key-id')?.value||'').trim();
+  const box=document.getElementById('rzp-status-box');
+  if(!keyId){toast('⚠ Enter a Key ID first.');return;}
+  if(!keyId.startsWith('rzp_')){
+    if(box){box.style.display='block';box.style.background='#ffebee';box.style.color='#c62828';box.textContent='❌ Invalid — Key must start with rzp_live_ or rzp_test_';}
+    return;
+  }
+  if(keyId.includes('XXXX')){
+    if(box){box.style.display='block';box.style.background='#fff3e0';box.style.color='#e65100';box.textContent='⚠ Replace placeholder with your real Razorpay key.';}
+    return;
+  }
+  const isLive=keyId.startsWith('rzp_live_');
+  if(box){
+    box.style.display='block';
+    box.style.background=isLive?'#e8f5e9':'#fff3e0';
+    box.style.color=isLive?'#2e7d32':'#e65100';
+    box.textContent=(isLive?'✅ LIVE key detected — real payments will be charged.':'🟡 TEST key — no real money charged. Switch to live before launch.')+' Key: '+keyId.substring(0,16)+'...';
+  }
+  toast(isLive?'✅ Live key format valid!':'🟡 Test key format valid!');
+}
+
+function importBackup(){
+  document.getElementById('import-file').click();
+}
+
+function handleImportFile(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data.tests){toast('⚠ Invalid backup — no tests found.');return;}
+      if(!confirm('Import '+data.tests.length+' tests from backup?\nThis will replace current data.')) return;
+      state.tests=data.tests;
+      if(data.settings)state.settings={...state.settings,...data.settings};
+      await saveAll();
+      renderDashboard();populateSelects();
+      toast('✅ Backup imported successfully!');
+    }catch(err){toast('❌ Import failed: '+err.message);}
+  };
+  reader.readAsText(file);
+  input.value='';
+}
+
+function loadQuestionsForImageManage(){
+  const testId=document.getElementById('qb-test')?.value;
+  const sub=parseInt(document.getElementById('qb-sub')?.value||0);
+  const container=document.getElementById('image-manager-questions');
+  if(!container)return;
+  const t=state.tests.find(x=>x._id===testId);
+  if(!t){container.innerHTML='<p style="color:var(--muted);padding:20px">Select a test above.</p>';return;}
+  const qs=(t.qbank||{})[sub]||[];
+  if(!qs.length){container.innerHTML='<p style="color:var(--muted);padding:20px">No questions in this section yet.</p>';return;}
+  container.innerHTML=qs.map((q,i)=>`
+    <div class="q-item-card">
+      <div class="q-text">Q${i+1}. ${escapeHtml(q.q||'')}</div>
+      <div class="q-options">${(q.opts||[]).map((o,j)=>`<span>${['A','B','C','D'][j]}) ${escapeHtml(o)}</span>`).join(' ')}</div>
+      <div class="q-answer">✓ ${['A','B','C','D'][q.ans]||'?'} — ${escapeHtml((q.opts||[])[q.ans]||'')}</div>
+      ${q.sol?`<div class="q-solution">💡 ${escapeHtml(q.sol)}</div>`:''}
+      ${q.img?`<img src="${q.img}" class="q-image">`:''}
+      <div class="img-upload-area">
+        <label class="img-upload-btn">📷 ${q.img?'Change':'Upload'} Image
+          <input type="file" accept="image/*" style="display:none" onchange="attachImage(this,'${testId}',${sub},${i})">
+        </label>
+        ${q.img?`<button class="btn btn-xs btn-err" onclick="removeImage('${testId}',${sub},${i})">✕ Remove</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function attachImage(input,testId,sub,qIdx){
+  const file=input.files[0];if(!file)return;
+  if(file.size>500000){toast('⚠ Image too large. Max 500KB.');return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const t=state.tests.find(x=>x._id===testId);if(!t)return;
+    if(!t.qbank)t.qbank={};
+    if(!t.qbank[sub])t.qbank[sub]=[];
+    if(t.qbank[sub][qIdx])t.qbank[sub][qIdx].img=e.target.result;
+    toast('✅ Image attached. Click Save & Sync.');
+    loadQuestionsForImageManage();
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeImage(testId,sub,qIdx){
+  const t=state.tests.find(x=>x._id===testId);if(!t)return;
+  if(t.qbank&&t.qbank[sub]&&t.qbank[sub][qIdx])t.qbank[sub][qIdx].img='';
+  toast('Image removed. Click Save & Sync.');
+  loadQuestionsForImageManage();
+}
+
+function emergencyReset(){
+  localStorage.removeItem('_admin_lock');
+  const lockEl=document.getElementById('ag-lockout');
+  const btn=document.getElementById('ag-btn');
+  const errEl=document.getElementById('ag-err');
+  const msg=document.getElementById('reset-msg');
+  if(lockEl)lockEl.style.display='none';
+  if(btn)btn.disabled=false;
+  if(errEl)errEl.textContent='';
+  if(msg){msg.style.display='block';setTimeout(()=>{msg.style.display='none';},3000);}
+}
 </script>
 </body>
-</html>
+</html>s
