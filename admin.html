@@ -1,13 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-<title>PrepXpert Admin — Bulk Import (PCM/PCB/NEET)</title>
+<title>PrepXpert Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <style>body {
   font-family: 'Poppins',sans-serif;
   background: #f5f7fb;
@@ -93,9 +91,8 @@
 .score {
   font-weight: 600;
   color: #2e7d32;
-}</style>
-
-<style>.tab-buttons {
+}
+.tab-buttons {
   display: flex;
   gap: 10px;
   margin-bottom: 15px;
@@ -146,10 +143,8 @@
 
 .modern-table tr:hover {
   background: #f9fafc;
-}</style>
+}
 
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
-<style>
 :root{
   --pri:#1e3a8a;--pri2:#1d4ed8;--acc:#f97316;
   --ok:#15803d;--err:#dc2626;
@@ -276,6 +271,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 </style>
 </head>
 <body>
+
 <div id="admin-gate">
   <div class="agate-card">
     <h1>Prep<span>Xpert</span> Admin</h1>
@@ -600,7 +596,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
         <div class="frow c2">
           <div class="fgrp">
             <label>Razorpay Key ID *</label>
-            <input type="password" id="rzp-key-id" placeholder="rzp_live_XXXXXXXXXXXXXXXX" autocomplete="off" style="font-family:monospace;font-size:13px" title="Your Razorpay Key ID">
+            <input type="text" id="rzp-key-id" placeholder="rzp_test_XXXXXXXXXXXXXXXX" autocomplete="off" style="font-family:monospace;font-size:13px">
           </div>
           <div class="fgrp">
             <label>Razorpay Key Secret *</label>
@@ -717,90 +713,538 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 </div>
 </div>
 
+
 <script>
-// ═══════════════════════ BACKEND URL CONFIG ═══════════════════════
-// Change this to your Render deployment URL (no trailing slash)
-// =====================================================
-// 🔧 CHANGE THIS to your new Render backend URL
-//    after deploying server.js to Render.
-//    Example: "https://prepxpert-api.onrender.com"
-// =====================================================
+
+// ══════════════════════════════════════════════
+// 🔧 CONFIG
+// ══════════════════════════════════════════════
 const BASE_URL = "https://backend-67yk.onrender.com";
 
-// ── Wake-up retry helper ──────────────────────────────────────────────
-async function fetchWithRetry(url, options = {}, retries = 4, delayMs = 4000) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(url, options);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res;
-    } catch (err) {
-      console.warn(`⚠️ Attempt ${attempt}/${retries} failed for ${url}:`, err.message);
-      if (attempt === retries) throw err;
-      await new Promise(r => setTimeout(r, delayMs * attempt));
+// Admin API key — set in Render env vars as ADMIN_API_KEY
+// Admin enters this once on login; stored in sessionStorage only (cleared on tab close)
+let ADMIN_KEY = '';
+
+function adminHeaders(){
+  return { 'Content-Type':'application/json', 'x-admin-key': ADMIN_KEY };
+}
+
+async function fetchWithRetry(url, options={}, retries=3, delayMs=3000){
+  for(let i=1;i<=retries;i++){
+    try{
+      const r=await fetch(url,options);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r;
+    }catch(e){
+      if(i===retries) throw e;
+      await new Promise(r=>setTimeout(r,delayMs*i));
     }
   }
 }
 
-// Ping backend on load so it starts waking up immediately
-(function pingBackend() {
-  fetch(BASE_URL + '/health').catch(() => {});
-})();
-
-let state = { tests: [], settings: { pay_amount:30, price:30, duration:180, rzp_key_id:'', rzp_mode:'test' } };
-let studentData = {
-  users: [],
-  scores: []
+// ══════════════════════════════════════════════
+// STATE (no more localStorage for tests/questions)
+// ══════════════════════════════════════════════
+let state = {
+  tests: [],
+  settings: { pay_amount:30, price:30, duration:180, rzp_key_id:'', rzp_mode:'test' }
 };
-function loadState(){
-  try{ const raw=localStorage.getItem('mhtcet_admin_data'); if(raw){ const p=JSON.parse(raw); if(p.tests)state.tests=p.tests; if(p.settings)state.settings={...state.settings,...p.settings}; } }catch(e){}
-  if(!state.tests.length) state.tests=[
-    {id:0,name:'MHT-CET PCM 2024',stream:'pcm',active:true,free:true,desc:'PCM Base',qbank:{0:[],1:[],2:[]}},
-    {id:1,name:'MHT-CET PCB 2024',stream:'pcb',active:true,free:true,desc:'PCB Base',qbank:{0:[],1:[],2:[]}},
-    {id:2,name:'NEET 2024 Mock',stream:'neet',active:true,free:true,desc:'NEET Mock — 180 Qs, 720 marks',qbank:{0:[],1:[],2:[]}}
-  ];
-  state.tests.forEach(t=>{ if(!t.qbank)t.qbank={0:[],1:[],2:[]}; if(!t.stream)t.stream='pcm'; if(!t.topics)t.topics={phy:'',che:'',third:''}; });
-  try{ const u=localStorage.getItem('mhtcet_users'); if(u)studentData.users=JSON.parse(u); }catch(e){}
-  
-  pushToStudent();
+let studentData = { users:[], scores:[] };
+
+// ══════════════════════════════════════════════
+// LOAD STATE FROM BACKEND
+// ══════════════════════════════════════════════
+async function loadState(){
+  updateSyncStatus('loading');
+  try{
+    const r = await fetchWithRetry(BASE_URL+'/admin/tests', { headers: adminHeaders() });
+    const tests = await r.json();
+    state.tests = tests;
+    // Load settings from localStorage (non-sensitive: price, duration, contact)
+    try{
+      const ls = JSON.parse(localStorage.getItem('mhtcet_admin_settings')||'{}');
+      if(ls) state.settings = {...state.settings,...ls};
+    }catch(e){}
+    updateSyncStatus('synced');
+    renderDashboard();
+    populateSelects();
+  }catch(e){
+    console.error('loadState failed:',e);
+    updateSyncStatus('error');
+    toast('⚠ Could not load data from server. Check your Admin API Key and server status.');
+  }
 }
 
-function pushToStudent(){
-  localStorage.setItem('mhtcet_student_data', JSON.stringify({tests:state.tests, settings:state.settings}));
+// ══════════════════════════════════════════════
+// SAVE — pushes tests metadata + settings to backend
+// Questions are saved separately via importAllSections
+// ══════════════════════════════════════════════
+async function saveAll(){
+  updateSyncStatus('saving');
+  try{
+    // Save non-sensitive settings to localStorage
+    localStorage.setItem('mhtcet_admin_settings', JSON.stringify(state.settings));
+    // Push settings to student frontend via localStorage (Razorpay key etc.)
+    localStorage.setItem('mhtcet_student_data', JSON.stringify({settings:state.settings}));
+    updateSyncStatus('synced');
+    const d=new Date();
+    document.getElementById('last-saved').textContent='Saved '+d.toLocaleTimeString();
+    toast('✅ Settings saved!');
+  }catch(e){
+    updateSyncStatus('error');
+    toast('❌ Save failed: '+e.message);
+  }
 }
 
-function saveAll(){  let questions = [
-  { question: "Test Question 1" }
-];
-  localStorage.setItem('mhtcet_admin_data', JSON.stringify({tests:state.tests, settings:state.settings}));
-  fetchWithRetry(BASE_URL + "/add-questions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state.tests)
-  })
-  .then(res => res.json())
-  .then(() => { toast('✅ Saved to DB'); })
-  .catch(() => { toast('⚠️ DB save failed — server may be waking up, retry in 30s'); });
-  pushToStudent();
-  localStorage.setItem('mhtcet_users', JSON.stringify(studentData.users));
-  
-  document.getElementById('last-saved').textContent='Saved '+new Date().toLocaleTimeString();
-  updateSyncStatus(); toast('✅ Saved & synced to student app');
-}
-
-function updateSyncStatus(){
+function updateSyncStatus(s){
   const el=document.getElementById('sync-status');
-  if(el) el.innerHTML=`● ${studentData.users?.length||0} students`;
+  if(!el) return;
+  if(s==='synced'){el.textContent='● Synced';el.style.background='#e8f5e9';el.style.color='#2e7d32';}
+  else if(s==='loading'){el.textContent='● Loading…';el.style.background='#fff3e0';el.style.color='#e65100';}
+  else if(s==='saving'){el.textContent='● Saving…';el.style.background='#fff3e0';el.style.color='#e65100';}
+  else{el.textContent='● Error';el.style.background='#ffebee';el.style.color='#c62828';}
 }
 
 function toast(msg){
-  let t=document.createElement('div'); t.className='toast'; t.textContent=msg;
-  document.body.appendChild(t); setTimeout(()=>t.remove(),2800);
+  const t=document.createElement('div');t.className='toast';t.textContent=msg;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),3000);
 }
 
-// ══════════════════════════════════════════════════════
-// IMPROVED PARSER — supports "Answer : A (Solution text)"
-// ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════
+async function renderDashboard(){
+  try{
+    const r = await fetchWithRetry(BASE_URL+'/admin/stats', { headers: adminHeaders() });
+    const stats = await r.json();
+    document.getElementById('stat-row').innerHTML=`
+      <div class="stat-card"><div class="stat-val">${stats.tests||0}</div><div class="stat-lbl">Total Tests</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.questions||0}</div><div class="stat-lbl">Total Questions</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.results||0}</div><div class="stat-lbl">Submissions</div></div>
+      <div class="stat-card"><div class="stat-val">${stats.unlocks||0}</div><div class="stat-lbl">Paid Unlocks</div></div>
+      <div class="stat-card"><div class="stat-val">${Math.round(stats.uptime/60)||0}m</div><div class="stat-lbl">Server Uptime</div></div>`;
+  }catch(e){
+    document.getElementById('stat-row').innerHTML=`<div style="color:var(--err);font-size:13px">⚠ Could not load stats</div>`;
+  }
+  renderTestsTable();
+}
+
+// ══════════════════════════════════════════════
+// TESTS TABLE
+// ══════════════════════════════════════════════
+function renderTestsTable(){
+  const tb=document.getElementById('dash-tests-table');
+  if(!state.tests.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">No tests yet. Add one!</td></tr>';return;}
+  const streamColors={pcm:'var(--pri)',pcb:'var(--bio)',neet:'var(--neet)',jee:'var(--jee)'};
+  tb.innerHTML=`<thead><tr><th>Test Name</th><th>Stream</th><th>Questions</th><th>Access</th><th>Status</th><th>Actions</th></tr></thead><tbody>`+
+    state.tests.map(t=>`<tr>
+      <td><strong>${escapeHtml(t.name)}</strong><br><span style="font-size:11px;color:var(--muted)">${escapeHtml(t.desc||'')}</span></td>
+      <td><span style="background:#e8eaf6;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:${streamColors[t.stream]||'var(--pri)'}">${(t.stream||'pcm').toUpperCase()}</span></td>
+      <td>${t.totalQ||0}</td>
+      <td><span class="${t.free?'badge-ok':'badge-err'}">${t.free?'FREE':'PAID'}</span></td>
+      <td><span class="${t.active?'badge-ok':'badge-err'}">${t.active?'Active':'Hidden'}</span></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-ghost" onclick="toggleTestActive('${t._id}',${!t.active})">${t.active?'Hide':'Show'}</button>
+        <button class="btn btn-sm btn-ghost" onclick="openEditTopics('${t._id}')">✏ Topics</button>
+        <button class="btn btn-sm btn-err" onclick="deleteTest('${t._id}')">🗑</button>
+      </td>
+    </tr>`).join('')+'</tbody>';
+}
+
+async function toggleTestActive(id, active){
+  try{
+    await fetchWithRetry(BASE_URL+'/admin/tests/'+id,{method:'POST',headers:adminHeaders(),body:JSON.stringify({active})});
+    await loadState();
+    toast(active?'✅ Test shown to students':'✅ Test hidden');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+async function deleteTest(id){
+  if(!confirm('Delete this test AND all its questions? This cannot be undone.')) return;
+  try{
+    await fetchWithRetry(BASE_URL+'/admin/tests/'+id,{method:'DELETE',headers:adminHeaders()});
+    await loadState();
+    toast('✅ Test deleted');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+async function clearTestQuestions(id){
+  if(!confirm('Delete all questions for this test?')) return;
+  try{
+    await fetchWithRetry(BASE_URL+'/admin/questions/'+id,{method:'DELETE',headers:adminHeaders()});
+    await loadState();
+    toast('✅ Questions cleared');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+// ══════════════════════════════════════════════
+// ADD NEW TEST → backend
+// ══════════════════════════════════════════════
+function updateNewTestModal(){
+  const stream=document.getElementById('nt-stream').value;
+  const info={pcm:'150 Qs · 200 Marks · No negative',pcb:'200 Qs · 200 Marks · No negative',neet:'180 Qs · 720 Marks · −1 negative',jee:'90 Qs · 360 Marks · −1 MCQ · Numerical last 5'};
+  document.getElementById('nt-stream-info').textContent=info[stream]||'';
+  const thirdLbl={pcm:'📐 Mathematics Topics',pcb:'🧬 Biology Topics',neet:'🧬 Biology Topics',jee:'📐 Mathematics Topics'};
+  const tl=document.getElementById('nt-third-lbl');if(tl)tl.textContent=thirdLbl[stream]||'Third Subject';
+}
+
+async function addNewTest(){
+  const name=document.getElementById('nt-name').value.trim();
+  const stream=document.getElementById('nt-stream').value;
+  const free=document.getElementById('nt-type').value==='1';
+  const desc=document.getElementById('nt-desc').value.trim();
+  const topics={phy:document.getElementById('nt-phy-topics').value.trim(),che:document.getElementById('nt-che-topics').value.trim(),third:document.getElementById('nt-third-topics').value.trim()};
+  if(!name){toast('Enter test name');return;}
+  try{
+    const r=await fetchWithRetry(BASE_URL+'/admin/tests',{method:'POST',headers:adminHeaders(),body:JSON.stringify({name,stream,free,desc,topics,duration:state.settings.duration||180})});
+    const data=await r.json();
+    if(!data.success) throw new Error(data.error||'Failed');
+    closeModal('new-test-modal');
+    await loadState();
+    toast('✅ Test "'+name+'" created!');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+function openNewTestModal(){
+  document.getElementById('nt-name').value='';
+  document.getElementById('nt-desc').value='';
+  document.getElementById('nt-stream').value='pcm';
+  document.getElementById('nt-type').value='1';
+  updateNewTestModal();
+  document.getElementById('new-test-modal').classList.add('on');
+}
+
+// ══════════════════════════════════════════════
+// POPULATE SELECTS
+// ══════════════════════════════════════════════
+function populateSelects(){
+  ['bulk-test','neet-bulk-test','jee-bulk-test'].forEach(sid=>{
+    const sel=document.getElementById(sid); if(!sel) return;
+    const stream=sid==='neet-bulk-test'?'neet':sid==='jee-bulk-test'?'jee':null;
+    const filtered=stream?state.tests.filter(t=>t.stream===stream):state.tests.filter(t=>t.stream!=='neet'&&t.stream!=='jee');
+    sel.innerHTML=filtered.length
+      ?filtered.map((t,i)=>`<option value="${t._id}">${escapeHtml(t.name)} (${(t.stream||'pcm').toUpperCase()})</option>`).join('')
+      :'<option value="">No tests available</option>';
+  });
+  updateBulkDynamic();
+}
+
+function updateBulkDynamic(){
+  const sel=document.getElementById('bulk-test'); if(!sel) return;
+  const testId=sel.value;
+  const t=state.tests.find(x=>x._id===testId);
+  const disp=document.getElementById('bulk-stream-display');
+  if(disp) disp.value=t?`${(t.stream||'pcm').toUpperCase()} — ${t.free?'Free':'Paid'}`:'';
+  const third=document.getElementById('third-section-title');
+  if(third&&t) third.textContent=t.stream==='pcb'?'🧬 BIOLOGY — 100 Questions':'📐 MATHEMATICS — 50 Questions';
+}
+
+// ══════════════════════════════════════════════
+// BULK IMPORT PCM/PCB → BACKEND
+// ══════════════════════════════════════════════
+function previewSection(sec){
+  const id=sec==='phy'?'bulk-phy':sec==='che'?'bulk-che':'bulk-mat';
+  const text=document.getElementById(id)?.value||'';
+  const qs=parseQuestionsFromText(text);
+  const countId=sec==='phy'?'phy-count':sec==='che'?'che-count':'mat-count';
+  document.getElementById(countId).textContent=`${qs.length} questions parsed`;
+  renderPreview(qs,document.getElementById('bulk-preview'));
+}
+
+function renderPreview(qs,container){
+  if(!container) return;
+  container.style.display='block';
+  if(!qs.length){container.innerHTML='<p style="color:var(--muted)">No questions parsed. Check format.</p>';return;}
+  container.innerHTML=qs.slice(0,5).map((q,i)=>`<div class="q-preview-item success">
+    <strong>Q${i+1}:</strong> ${escapeHtml(q.q)}<br>
+    <span style="color:var(--muted);font-size:12px">${q.opts.map((o,j)=>`${['A','B','C','D'][j]}) ${o}`).join(' · ')}</span><br>
+    <span style="color:var(--ok);font-size:12px">✓ Answer: ${['A','B','C','D'][q.ans]}</span>
+    ${q.sol?`<div class="sol-preview">💡 ${escapeHtml(q.sol)}</div>`:''}
+  </div>`).join('')+(qs.length>5?`<div style="text-align:center;color:var(--muted);font-size:12px;padding:8px">...and ${qs.length-5} more</div>`:'');
+}
+
+async function importAllSections(){
+  const testId=document.getElementById('bulk-test')?.value;
+  if(!testId){toast('Select a test');return;}
+  const t=state.tests.find(x=>x._id===testId);
+  if(!t){toast('Test not found');return;}
+  if(t.stream==='neet'){toast('⚠ Use NEET Bulk Import tab');return;}
+  if(t.stream==='jee'){toast('⚠ Use JEE Bulk Import tab');return;}
+  const replace=document.getElementById('bulk-replace')?.value==='1';
+  const phyText=document.getElementById('bulk-phy')?.value||'';
+  const cheText=document.getElementById('bulk-che')?.value||'';
+  const matText=document.getElementById('bulk-mat')?.value||'';
+  const phyQs=parseQuestionsFromText(phyText);
+  const cheQs=parseQuestionsFromText(cheText);
+  const matQs=parseQuestionsFromText(matText);
+  if(!phyQs.length&&!cheQs.length&&!matQs.length){toast('No questions parsed. Check format.');return;}
+  const questions=[
+    ...phyQs.map((q,i)=>({...q,section:0,index:i})),
+    ...cheQs.map((q,i)=>({...q,section:1,index:i})),
+    ...matQs.map((q,i)=>({...q,section:2,index:i})),
+  ];
+  try{
+    const r=await fetchWithRetry(BASE_URL+'/admin/questions',{method:'POST',headers:adminHeaders(),body:JSON.stringify({testId,questions,replace})});
+    const data=await r.json();
+    if(!data.success) throw new Error(data.error||'Failed');
+    await loadState();
+    toast(`✅ Imported ${data.count} questions into "${t.name}"`);
+    document.getElementById('bulk-phy').value='';
+    document.getElementById('bulk-che').value='';
+    document.getElementById('bulk-mat').value='';
+    document.getElementById('bulk-preview').style.display='none';
+  }catch(e){toast('❌ Import failed: '+e.message);}
+}
+
+// ══════════════════════════════════════════════
+// NEET BULK IMPORT → BACKEND
+// ══════════════════════════════════════════════
+function previewNeetSection(sec){
+  const id=`neet-bulk-${sec}`;
+  const text=document.getElementById(id)?.value||'';
+  const qs=parseQuestionsFromText(text);
+  const countId=`neet-${sec}-count`;
+  document.getElementById(countId).textContent=`${qs.length} questions parsed`;
+  renderPreview(qs,document.getElementById('neet-bulk-preview'));
+}
+
+async function importNeetSections(){
+  const testId=document.getElementById('neet-bulk-test')?.value;
+  if(!testId){toast('Select a NEET test');return;}
+  const replace=document.getElementById('neet-bulk-replace')?.value==='1';
+  const phyQs=parseQuestionsFromText(document.getElementById('neet-bulk-phy')?.value||'');
+  const cheQs=parseQuestionsFromText(document.getElementById('neet-bulk-che')?.value||'');
+  const bioQs=parseQuestionsFromText(document.getElementById('neet-bulk-bio')?.value||'');
+  if(!phyQs.length&&!cheQs.length&&!bioQs.length){toast('No questions parsed.');return;}
+  const questions=[
+    ...phyQs.map((q,i)=>({...q,section:0,index:i})),
+    ...cheQs.map((q,i)=>({...q,section:1,index:i})),
+    ...bioQs.map((q,i)=>({...q,section:2,index:i})),
+  ];
+  try{
+    const r=await fetchWithRetry(BASE_URL+'/admin/questions',{method:'POST',headers:adminHeaders(),body:JSON.stringify({testId,questions,replace})});
+    const data=await r.json();
+    if(!data.success) throw new Error(data.error||'Failed');
+    await loadState();
+    toast(`✅ Imported ${data.count} NEET questions`);
+    ['neet-bulk-phy','neet-bulk-che','neet-bulk-bio'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    document.getElementById('neet-bulk-preview').style.display='none';
+  }catch(e){toast('❌ Import failed: '+e.message);}
+}
+
+// ══════════════════════════════════════════════
+// JEE BULK IMPORT → BACKEND
+// ══════════════════════════════════════════════
+function previewJeeSection(sec){
+  const id=`jee-bulk-${sec}`;
+  const text=document.getElementById(id)?.value||'';
+  const qs=parseJeeQuestions(text);
+  const countId=`jee-${sec}-count`;
+  document.getElementById(countId).textContent=`${qs.length} questions parsed`;
+  renderJeePreview(qs,document.getElementById('jee-bulk-preview'));
+}
+
+function renderJeePreview(qs,container){
+  if(!container) return;
+  container.style.display='block';
+  if(!qs.length){container.innerHTML='<p style="color:var(--muted)">No questions parsed.</p>';return;}
+  container.innerHTML=qs.slice(0,5).map((q,i)=>`<div class="q-preview-item success">
+    <strong>Q${i+1}${q.isNumerical?' [Numerical]':''}:</strong> ${escapeHtml(q.q)}<br>
+    ${q.isNumerical?`<span style="color:var(--ok);font-size:12px">✓ Answer: ${q.numericalAns}</span>`
+      :`<span style="color:var(--muted);font-size:12px">${q.opts.map((o,j)=>`${['A','B','C','D'][j]}) ${o}`).join(' · ')}</span><br>
+       <span style="color:var(--ok);font-size:12px">✓ Answer: ${['A','B','C','D'][q.ans]}</span>`}
+    ${q.sol?`<div class="sol-preview">💡 ${escapeHtml(q.sol)}</div>`:''}
+  </div>`).join('')+(qs.length>5?`<div style="text-align:center;color:var(--muted);font-size:12px;padding:8px">...and ${qs.length-5} more</div>`:'');
+}
+
+async function importJeeSections(){
+  const testId=document.getElementById('jee-bulk-test')?.value;
+  if(!testId){toast('Select a JEE test');return;}
+  const replace=true; // JEE always replaces by section
+  const phyQs=parseJeeQuestions(document.getElementById('jee-bulk-phy')?.value||'');
+  const cheQs=parseJeeQuestions(document.getElementById('jee-bulk-che')?.value||'');
+  const matQs=parseJeeQuestions(document.getElementById('jee-bulk-mat')?.value||'');
+  if(!phyQs.length&&!cheQs.length&&!matQs.length){toast('No questions parsed.');return;}
+  const questions=[
+    ...phyQs.map((q,i)=>({...q,section:0,index:i})),
+    ...cheQs.map((q,i)=>({...q,section:1,index:i})),
+    ...matQs.map((q,i)=>({...q,section:2,index:i})),
+  ];
+  try{
+    const r=await fetchWithRetry(BASE_URL+'/admin/questions',{method:'POST',headers:adminHeaders(),body:JSON.stringify({testId,questions,replace})});
+    const data=await r.json();
+    if(!data.success) throw new Error(data.error||'Failed');
+    await loadState();
+    toast(`✅ Imported ${data.count} JEE questions`);
+    ['jee-bulk-phy','jee-bulk-che','jee-bulk-mat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    document.getElementById('jee-bulk-preview').style.display='none';
+  }catch(e){toast('❌ Import failed: '+e.message);}
+}
+
+// ══════════════════════════════════════════════
+// EDIT TOPICS
+// ══════════════════════════════════════════════
+function openEditTopics(testId){
+  const t=state.tests.find(x=>x._id===testId); if(!t) return;
+  document.getElementById('et-test-name').textContent=t.name;
+  document.getElementById('et-phy-topics').value=t.topics?.phy||'';
+  document.getElementById('et-che-topics').value=t.topics?.che||'';
+  document.getElementById('et-third-topics').value=t.topics?.third||'';
+  document.getElementById('edit-topics-modal')._editId=testId;
+  document.getElementById('edit-topics-modal').classList.add('on');
+}
+
+async function saveTopics(){
+  const id=document.getElementById('edit-topics-modal')._editId;
+  const topics={phy:document.getElementById('et-phy-topics').value.trim(),che:document.getElementById('et-che-topics').value.trim(),third:document.getElementById('et-third-topics').value.trim()};
+  try{
+    await fetchWithRetry(BASE_URL+'/admin/tests/'+id,{method:'POST',headers:adminHeaders(),body:JSON.stringify({topics})});
+    closeModal('edit-topics-modal');
+    await loadState();
+    toast('✅ Topics saved');
+  }catch(e){toast('❌ '+e.message);}
+}
+
+// ══════════════════════════════════════════════
+// STUDENTS & RANKING — from backend
+// ══════════════════════════════════════════════
+async function renderStudents(){
+  const tb=document.getElementById('students-table')||document.querySelector('#page-students table');
+  if(!tb) return;
+  tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px">⏳ Loading…</td></tr>';
+  try{
+    const r=await fetchWithRetry(BASE_URL+'/admin/results',{headers:adminHeaders()});
+    const results=await r.json();
+    if(!results.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">No results yet</td></tr>';return;}
+    tb.innerHTML=results.map((r,i)=>`<tr>
+      <td>${i+1}</td>
+      <td><strong>${escapeHtml(r.name||'')}</strong></td>
+      <td><span class="badge-ok">${r.type||'—'}</span></td>
+      <td><strong style="color:var(--ok)">${r.score}/${r.total}</strong></td>
+      <td style="font-size:11px;color:var(--muted)">${r.date?new Date(r.date).toLocaleDateString('en-IN'):''}</td>
+    </tr>`).join('');
+  }catch(e){tb.innerHTML=`<tr><td colspan="5" style="color:var(--err);text-align:center">⚠ ${e.message}</td></tr>`;}
+}
+
+async function clearStudentData(){
+  if(!confirm('Delete ALL student results? This cannot be undone!')) return;
+  try{
+    await fetchWithRetry(BASE_URL+'/admin/results',{method:'DELETE',headers:adminHeaders()});
+    toast('✅ All results cleared');
+    renderStudents();
+  }catch(e){toast('❌ '+e.message);}
+}
+
+// ══════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════
+function saveSettings(){
+  state.settings.duration=parseInt(document.getElementById('set-duration')?.value||180);
+  state.settings.price=parseFloat(document.getElementById('set-price')?.value||30);
+  saveAll();
+}
+
+function loadRazorpaySettings(){
+  const keyEl=document.getElementById('rzp-key-id');
+  const modeEl=document.getElementById('rzp-mode');
+  if(keyEl) keyEl.value=state.settings.rzp_key_id||'';
+  if(modeEl) modeEl.value=state.settings.rzp_mode||'test';
+  showRzpCurrent();
+}
+
+function saveRazorpaySettings(){
+  const keyId=(document.getElementById('rzp-key-id')?.value||'').trim();
+  const mode=document.getElementById('rzp-mode')?.value||'test';
+  if(keyId&&!keyId.startsWith('rzp_')){toast('⚠ Key must start with rzp_live_ or rzp_test_');return;}
+  state.settings.rzp_key_id=keyId;
+  state.settings.rzp_mode=mode;
+  // Push to student localStorage so frontend can use it
+  const sd=JSON.parse(localStorage.getItem('mhtcet_student_data')||'{}');
+  sd.settings=sd.settings||{};
+  sd.settings.rzp_key_id=keyId;
+  localStorage.setItem('mhtcet_student_data',JSON.stringify(sd));
+  saveAll();
+  showRzpCurrent();
+  document.getElementById('rzp-saved-indicator').style.display='block';
+  setTimeout(()=>document.getElementById('rzp-saved-indicator').style.display='none',2000);
+}
+
+function showRzpCurrent(){
+  const keyEl=document.getElementById('rzp-current-key');
+  const modeEl=document.getElementById('rzp-current-mode');
+  const key=state.settings.rzp_key_id||'';
+  if(keyEl) keyEl.textContent=key?key.substring(0,16)+'…':'Not set';
+  if(modeEl) modeEl.textContent=state.settings.rzp_mode==='live'?'🟢 LIVE':'🟡 Test';
+}
+
+function toggleSecretVis(){
+  const inp=document.getElementById('rzp-key-id');
+  if(!inp) return;
+  inp.type=inp.type==='password'?'text':'password';
+}
+
+function loadContactSettings(){
+  const c=state.settings.contact||{};
+  const fields={wa:'contact-wa',tg:'contact-tg','waMsg':'contact-wa-msg',heading:'contact-heading'};
+  Object.entries(fields).forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=c[k]||'';});
+}
+
+function saveContactSettings(){
+  state.settings.contact={
+    wa:(document.getElementById('contact-wa')?.value||'').trim(),
+    tg:(document.getElementById('contact-tg')?.value||'').trim(),
+    waMsg:(document.getElementById('contact-wa-msg')?.value||'').trim(),
+    heading:(document.getElementById('contact-heading')?.value||'').trim(),
+  };
+  saveAll();
+  toast('✅ Contact settings saved');
+}
+
+function previewContactSettings(){
+  const wa=(document.getElementById('contact-wa')?.value||'').trim();
+  const tg=(document.getElementById('contact-tg')?.value||'').trim();
+  const el=document.getElementById('contact-preview-inner');
+  if(!el) return;
+  el.innerHTML=wa||tg?`${wa?`<div>WhatsApp: <strong>${wa}</strong></div>`:''}${tg?`<div>Telegram: <strong>${tg}</strong></div>`:''}`:'<em>No contact info set yet</em>';
+  document.getElementById('contact-preview').style.display='block';
+}
+
+// ══════════════════════════════════════════════
+// EXPORT
+// ══════════════════════════════════════════════
+async function exportData(){
+  try{
+    const r=await fetchWithRetry(BASE_URL+'/admin/results',{headers:adminHeaders()});
+    const results=await r.json();
+    const json=JSON.stringify({tests:state.tests,results,exported:new Date().toISOString()},null,2);
+    const blob=new Blob([json],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='prepxpert-backup-'+Date.now()+'.json';a.click();
+    URL.revokeObjectURL(url);
+    toast('✅ Backup downloaded');
+  }catch(e){toast('❌ Export failed: '+e.message);}
+}
+
+// ══════════════════════════════════════════════
+// NAV
+// ══════════════════════════════════════════════
+function navTo(page, el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
+  const pageEl=document.getElementById('page-'+page);
+  if(pageEl) pageEl.classList.add('on');
+  if(el) el.classList.add('on');
+  const titles={dashboard:'Dashboard',bulk150:'PCM/PCB Bulk Import',bulkneet:'NEET Bulk Import',bulkjee:'JEE Bulk Import',tests:'Manage Tests',students:'Students & Ranking',settings:'Settings'};
+  document.getElementById('page-title').textContent=titles[page]||page;
+  if(page==='students') renderStudents();
+  if(page==='settings'){ loadRazorpaySettings(); loadContactSettings(); }
+  if(page==='dashboard') renderDashboard();
+}
+
+function closeModal(id){document.getElementById(id)?.classList.remove('on');}
+function escapeHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+
 function parseQuestionsFromText(text, maxCount=50){
   if(!text.trim()) return [];
   const lines=text.split(/\r?\n/);
@@ -862,81 +1306,6 @@ function parseQuestionsFromText(text, maxCount=50){
   return questions.slice(0, maxCount);
 }
 
-function updateBulkDynamic(){
-  let ti=parseInt(document.getElementById('bulk-test').value);
-  let t=state.tests[ti]; if(!t) return;
-  let isPCB=t.stream==='pcb';
-  let isNEET=t.stream==='neet';
-  if(isNEET){
-    document.getElementById('bulk-stream-display').value='⚠ Use NEET Bulk Import for NEET tests';
-    return;
-  }
-  if(t.stream==='jee'){
-    document.getElementById('bulk-stream-display').value='⚠ Use JEE Bulk Import for JEE tests';
-    return;
-  }
-  let thirdLabel=isPCB?'🧬 BIOLOGY — 100 Questions':'📐 MATHEMATICS — 50 Questions';
-  document.getElementById('bulk-stream-display').value=isPCB?'PCB: 50 Phy + 50 Chem + 100 Biology':'PCM: 50 Phy + 50 Chem + 50 Maths';
-  document.getElementById('third-section-title').innerHTML=thirdLabel;
-}
-
-function previewSection(s){
-  let sel=document.getElementById('bulk-test');
-  let ti=parseInt(sel.value);
-  let t=state.tests[ti];
-  let max=(s==='mat'&&t?.stream==='pcb')?100:50;
-  let text=document.getElementById(`bulk-${s}`).value;
-  let qs=parseQuestionsFromText(text,max);
-  document.getElementById(`${s}-count`).innerHTML=`📊 ${qs.length}/${max} parsed`;
-  renderPreview(qs, 'bulk-preview', s.toUpperCase(), max);
-}
-
-function previewNeetSection(s){
-  let maxMap={phy:45,che:45,bio:90};
-  let max=maxMap[s];
-  let text=document.getElementById(`neet-bulk-${s}`).value;
-  let qs=parseQuestionsFromText(text,max);
-  document.getElementById(`neet-${s}-count`).innerHTML=`📊 ${qs.length}/${max} parsed`;
-  renderPreview(qs, 'neet-bulk-preview', s.toUpperCase(), max);
-}
-
-function renderPreview(qs, containerId, label, max){
-  let html=`<strong>${label} — ${qs.length} questions parsed</strong>`;
-  qs.forEach((q,i)=>{
-    html+=`<div class="q-preview-item success">
-      <strong>Q${i+1}:</strong> ${q.q.substring(0,120)}<br>
-      <small>${q.opts.map((o,j)=>`${String.fromCharCode(65+j)}) ${o.substring(0,35)}`).join(' · ')}</small><br>
-      <small style="color:var(--ok);font-weight:700">✓ Ans: ${String.fromCharCode(65+q.ans)}</small>
-      ${q.sol?`<div class="sol-preview">💡 ${q.sol.substring(0,100)}${q.sol.length>100?'…':''}</div>`:''}
-    </div>`;
-  });
-  if(!qs.length) html='<p style="color:var(--err)">No valid questions found. Check format.</p>';
-  let pv=document.getElementById(containerId); pv.innerHTML=html; pv.style.display='block';
-}
-
-function importAllSections(){
-  let ti=parseInt(document.getElementById('bulk-test').value);
-  let t=state.tests[ti]; if(!t){ toast('Select a test'); return; }
-  if(t.stream==='neet'){ toast('⚠ Use NEET Bulk Import for NEET tests'); return; }
-  if(t.stream==='jee'){ toast('⚠ Use JEE Bulk Import for JEE tests'); return; }
-  let replace=document.getElementById('bulk-replace').value==='1';
-  if(replace) t.qbank={0:[],1:[],2:[]};
-  let isPCB=t.stream==='pcb';
-  let maxThird=isPCB?100:50;
-  let phy=parseQuestionsFromText(document.getElementById('bulk-phy').value,50);
-  let che=parseQuestionsFromText(document.getElementById('bulk-che').value,50);
-  let third=parseQuestionsFromText(document.getElementById('bulk-mat').value,maxThird);
-  phy.forEach(q=>{ if(t.qbank[0].length<50)t.qbank[0].push({...q}); });
-  che.forEach(q=>{ if(t.qbank[1].length<50)t.qbank[1].push({...q}); });
-  third.forEach(q=>{ if(t.qbank[2].length<maxThird)t.qbank[2].push({...q}); });
-  saveAll(); renderDashboard(); loadQuestionsForImageManage();
-  toast(`✅ Imported: ${phy.length} Physics, ${che.length} Chemistry, ${third.length} ${isPCB?'Biology':'Math'}`);
-}
-
-
-// ══════════════════════════════════════════════════════
-// JEE PARSER — MCQ (Q1-Q25) + Numerical (Q26-Q30, no options)
-// ══════════════════════════════════════════════════════
 function parseJeeQuestions(text, numericalStart=26, maxCount=30){
   if(!text.trim()) return [];
   const lines=text.split(/\r?\n/);
@@ -1025,498 +1394,7 @@ function parseJeeQuestions(text, numericalStart=26, maxCount=30){
   return questions.slice(0,maxCount);
 }
 
-function previewJeeSection(s){
-  let text=document.getElementById(`jee-bulk-${s}`).value;
-  let qs=parseJeeQuestions(text,26,30);
-  let numCount=qs.filter(q=>q.isNumerical).length;
-  let mcqCount=qs.filter(q=>!q.isNumerical).length;
-  document.getElementById(`jee-${s}-count`).innerHTML=`📊 ${qs.length}/30 parsed (${mcqCount} MCQ + ${numCount} Numerical)`;
-  renderJeePreview(qs,'jee-bulk-preview',s.toUpperCase());
-}
 
-function renderJeePreview(qs,containerId,label){
-  let html=`<strong>${label} — ${qs.length} questions parsed</strong>`;
-  qs.forEach((q,i)=>{
-    html+=`<div class="q-preview-item success" style="${q.isNumerical?'border-left:3px solid #e65100':''}">
-      <strong>Q${i+1}${q.isNumerical?' <span style=\"background:#fff3e0;color:#e65100;padding:1px 6px;border-radius:3px;font-size:10px\">NUMERICAL</span>':''}:</strong> ${q.q.substring(0,120)}<br>
-      ${!q.isNumerical?`<small>${q.opts.map((o,j)=>`${String.fromCharCode(65+j)}) ${o.substring(0,35)}`).join(' · ')}</small><br>`:''}
-      <small style="color:${q.isNumerical?'#e65100':'var(--ok)'};font-weight:700">✓ Ans: ${q.isNumerical?q.numericalAns:String.fromCharCode(65+q.ans)}</small>
-      ${q.sol?`<div class="sol-preview">💡 ${q.sol.substring(0,100)}${q.sol.length>100?'…':''}</div>`:''}
-    </div>`;
-  });
-  if(!qs.length) html='<p style="color:var(--err)">No valid questions found. Check format.</p>';
-  let pv=document.getElementById(containerId); pv.innerHTML=html; pv.style.display='block';
-}
-
-function importJeeSections(){
-  let ti=parseInt(document.getElementById('jee-bulk-test').value);
-  let t=state.tests[ti]; if(!t){ toast('Select a JEE test'); return; }
-  if(t.stream!=='jee'){ toast('⚠ Selected test is not JEE type'); return; }
-  let replace=document.getElementById('jee-bulk-replace').value==='1';
-  if(replace) t.qbank={0:[],1:[],2:[]};
-  let phy=parseJeeQuestions(document.getElementById('jee-bulk-phy').value,26,30);
-  let che=parseJeeQuestions(document.getElementById('jee-bulk-che').value,26,30);
-  let mat=parseJeeQuestions(document.getElementById('jee-bulk-mat').value,26,30);
-  phy.forEach(q=>{ if(t.qbank[0].length<30)t.qbank[0].push({...q}); });
-  che.forEach(q=>{ if(t.qbank[1].length<30)t.qbank[1].push({...q}); });
-  mat.forEach(q=>{ if(t.qbank[2].length<30)t.qbank[2].push({...q}); });
-  const allQuestions = [...phy, ...che, ...mat];
-
-  fetchWithRetry(BASE_URL + "/add-questions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(allQuestions)
-  }).catch(() => toast('⚠️ DB upload failed — server may be waking up'));
-  saveAll(); renderDashboard();
-  let pNum=phy.filter(q=>q.isNumerical).length,cNum=che.filter(q=>q.isNumerical).length,mNum=mat.filter(q=>q.isNumerical).length;
-  toast(`✅ JEE Import: ${phy.length} Phy (${pNum} num), ${che.length} Chem (${cNum} num), ${mat.length} Maths (${mNum} num)`);
-}
-
-function importNeetSections(){
-  let ti=parseInt(document.getElementById('neet-bulk-test').value);
-  let t=state.tests[ti]; if(!t){ toast('Select a NEET test'); return; }
-  if(t.stream!=='neet'){ toast('⚠ Selected test is not NEET type'); return; }
-  let replace=document.getElementById('neet-bulk-replace').value==='1';
-  if(replace) t.qbank={0:[],1:[],2:[]};
-  let phy=parseQuestionsFromText(document.getElementById('neet-bulk-phy').value,45);
-  let che=parseQuestionsFromText(document.getElementById('neet-bulk-che').value,45);
-  let bio=parseQuestionsFromText(document.getElementById('neet-bulk-bio').value,90);
-  phy.forEach(q=>{ if(t.qbank[0].length<45)t.qbank[0].push({...q}); });
-  che.forEach(q=>{ if(t.qbank[1].length<45)t.qbank[1].push({...q}); });
-  bio.forEach(q=>{ if(t.qbank[2].length<90)t.qbank[2].push({...q}); });
-  const allQuestions = [...phy, ...che, ...bio];
-
-  fetchWithRetry(BASE_URL + "/add-questions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(allQuestions)
-  }).catch(() => toast('⚠️ DB upload failed — server may be waking up'));
-  saveAll(); renderDashboard();
-  toast(`✅ NEET Import: ${phy.length} Phy, ${che.length} Chem, ${bio.length} Bio`);
-}
-
-function populateSelects(){
-  let opts=state.tests.map((t,i)=>`<option value="${i}">${escapeHtml(t.name)} [${t.stream.toUpperCase()}]</option>`).join('');
-  let jeeOpts=state.tests.filter((t,i)=>t.stream==='jee').map((t,i)=>{
-    let realIdx=state.tests.indexOf(t);
-    return `<option value="${realIdx}">${escapeHtml(t.name)}</option>`;
-  }).join('');
-  let neetOpts=state.tests.filter((t,i)=>t.stream==='neet').map((t,i)=>{
-    let realIdx=state.tests.indexOf(t);
-    return `<option value="${realIdx}">${escapeHtml(t.name)}</option>`;
-  }).join('');
-  ['bulk-test','ak-test','qb-test'].forEach(id=>{ let el=document.getElementById(id); if(el)el.innerHTML=opts; });
-  let ne=document.getElementById('neet-bulk-test');
-  if(ne) ne.innerHTML=neetOpts||'<option value="">No NEET tests yet</option>';
-  let je=document.getElementById('jee-bulk-test');
-  if(je) je.innerHTML=jeeOpts||'<option value="">No JEE tests yet</option>';
-  if(document.getElementById('set-amount')){
-    document.getElementById('set-amount').value=state.settings.pay_amount||30;
-    document.getElementById('set-duration').value=state.settings.duration||180;
-  }
-  updateBulkDynamic();
-}
-
-function loadQuestionsForImageManage(){
-  let ti=parseInt(document.getElementById('qb-test').value);
-  let si=parseInt(document.getElementById('qb-sub').value);
-  let t=state.tests[ti]; if(!t) return;
-  let isPCB=t.stream==='pcb', isNEET=t.stream==='neet';
-  let subNames=isNEET?['Physics','Chemistry','Biology']:['Physics','Chemistry',isPCB?'Biology':'Mathematics'];
-  document.getElementById('qb-sub').options[2].text=subNames[2];
-  let qs=t.qbank[si]||[];
-  let html=`<div style="background:#e8eaf6;padding:12px;border-radius:8px;margin-bottom:16px"><strong>${t.name}</strong> | ${subNames[si]} | ${qs.length} questions</div>`;
-  qs.forEach((q,idx)=>{
-    html+=`<div class="q-item-card">
-      <div class="q-number" style="font-family:'Montserrat',sans-serif;font-weight:700;color:var(--pri);margin-bottom:6px">Q${idx+1}</div>
-      <div class="q-text">${escapeHtml(q.q.substring(0,180))}</div>
-      <div class="q-options">${q.opts.map((opt,i)=>`<span><strong>${String.fromCharCode(65+i)})</strong> ${escapeHtml(opt.substring(0,50))}</span>`).join('')}</div>
-      <div class="q-answer">✓ Ans: ${String.fromCharCode(65+q.ans)}</div>
-      ${q.sol?`<div class="q-solution">💡 <strong>Solution:</strong> ${escapeHtml(q.sol.substring(0,200))}</div>`:'<div style="color:#aaa;font-size:11px;margin-top:4px">No solution added</div>'}
-      ${q.img?`<img src="${q.img}" class="q-image">`:'<div style="color:#aaa;font-size:12px;margin-top:6px">📷 No diagram</div>'}
-      <div class="img-upload-area">
-        <input type="file" accept="image/*" style="display:none" id="img-${ti}-${si}-${idx}" onchange="uploadImg(${ti},${si},${idx},this)">
-        <button class="img-upload-btn" onclick="document.getElementById('img-${ti}-${si}-${idx}').click()">📤 ${q.img?'Change':'Upload'} Diagram</button>
-        ${q.img?`<button class="img-upload-btn" style="background:#ffebee;color:var(--err)" onclick="removeImg(${ti},${si},${idx})">Remove</button>`:''}
-      </div>
-    </div>`;
-  });
-  if(!qs.length) html+='<div style="padding:40px;text-align:center;color:#aaa">No questions. Use Bulk Import first.</div>';
-  document.getElementById('image-manager-questions').innerHTML=html;
-}
-
-function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function uploadImg(ti,si,qi,input){ if(!input.files[0])return; let f=input.files[0]; if(f.size>2*1024*1024){toast('Max 2MB');return;} let r=new FileReader(); r.onload=e=>{state.tests[ti].qbank[si][qi].img=e.target.result;saveAll();loadQuestionsForImageManage();toast('Diagram uploaded');}; r.readAsDataURL(f); }
-function removeImg(ti,si,qi){ if(confirm('Remove diagram?')){state.tests[ti].qbank[si][qi].img='';saveAll();loadQuestionsForImageManage();toast('Removed');} }
-
-function applyAnswerKey(){
-  let ti=parseInt(document.getElementById('ak-test').value);
-  let si=parseInt(document.getElementById('ak-sub').value);
-  let raw=document.getElementById('ak-input').value;
-  let pairs=raw.match(/(\d+)\s*[-:.\s]\s*([A-Da-d])/g);
-  if(!pairs){toast('Invalid format');return;}
-  let n=0;
-  for(let p of pairs){
-    let m=p.match(/(\d+)\s*[-:.\s]\s*([A-Da-d])/);
-    if(m){let qi=parseInt(m[1])-1;let ans={A:0,B:1,C:2,D:3}[m[2].toUpperCase()];if(state.tests[ti].qbank[si][qi]&&ans!==undefined){state.tests[ti].qbank[si][qi].ans=ans;n++;}}
-  }
-  saveAll(); toast(`Updated ${n} answers`);
-}
-
-function renderDashboard(){
-  let totalQ=0,neetQ=0,active=0,neetTests=0;
-  state.tests.forEach(t=>{
-    let p=t.qbank[0]?.length||0,c=t.qbank[1]?.length||0,m=t.qbank[2]?.length||0;
-    totalQ+=p+c+m; if(t.active)active++;
-    if(t.stream==='neet'){neetQ+=p+c+m;neetTests++;}
-  });
-  let sc=studentData.users?.length||0;
-  document.getElementById('stat-row').innerHTML=`
-    <div class="stat-card"><div class="stat-val">${state.tests.length}</div><div class="stat-lbl">Total Tests</div></div>
-    <div class="stat-card"><div class="stat-val">${active}</div><div class="stat-lbl">Active</div></div>
-    <div class="stat-card"><div class="stat-val">${totalQ}</div><div class="stat-lbl">Questions</div></div>
-    <div class="stat-card neet"><div class="stat-val">${neetTests}</div><div class="stat-lbl">NEET Tests</div></div>
-    <div class="stat-card neet"><div class="stat-val">${neetQ}</div><div class="stat-lbl">NEET Qs</div></div>
-    <div class="stat-card"><div class="stat-val">${sc}</div><div class="stat-lbl">Students</div></div>`;
-
-  let dashHtml=`<thead><tr><th>#</th><th>Test</th><th>Stream</th><th>S1</th><th>S2</th><th>S3</th><th>Status</th></tr></thead><tbody>`;
-  state.tests.forEach((t,i)=>{
-    let isNEET=t.stream==='neet';
-    let isJEE=t.stream==='jee';let max1=isNEET?45:isJEE?30:50,max2=isNEET?45:isJEE?30:50,max3=isNEET?90:isJEE?30:(t.stream==='pcb'?100:50);
-    let streamBadge=isNEET?`<span class="badge-neet">NEET</span>`:isJEE?`<span class="badge-jee">JEE</span>`:`<span class="badge-ok">${t.stream.toUpperCase()}</span>`;
-    dashHtml+=`<tr>
-      <td>${i+1}</td>
-      <td><strong>${escapeHtml(t.name)}</strong></td>
-      <td>${streamBadge}</td>
-      <td>${t.qbank[0]?.length||0}/${max1}</td>
-      <td>${t.qbank[1]?.length||0}/${max2}</td>
-      <td>${t.qbank[2]?.length||0}/${max3}</td>
-      <td class="${t.active?'badge-ok':'badge-err'}">${t.active?'LIVE':'Draft'}</td>
-    </tr>`;
-  });
-  dashHtml+=`</tbody>`;
-  document.getElementById('dash-tests-table').innerHTML=dashHtml;
-}
-
-function renderTestsTable(){
-  let html=`<thead><tr><th>Name</th><th>Stream</th><th>Free</th><th>Active</th><th>Qs</th><th>Actions</th></tr></thead><tbody>`;
-  state.tests.forEach((t,i)=>{
-    let total=(t.qbank[0]?.length||0)+(t.qbank[1]?.length||0)+(t.qbank[2]?.length||0);
-    html+=`<tr>
-      <td><strong>${escapeHtml(t.name)}</strong></td>
-      <td>
-        <select onchange="state.tests[${i}].stream=this.value;saveAll();renderTestsTable();renderDashboard();updateBulkDynamic();">
-          <option value="pcm" ${t.stream==='pcm'?'selected':''}>PCM</option>
-          <option value="pcb" ${t.stream==='pcb'?'selected':''}>PCB</option>
-          <option value="neet" ${t.stream==='neet'?'selected':''}>NEET</option>
-          <option value="jee" ${t.stream==='jee'?'selected':''}>JEE</option>
-        </select>
-      </td>
-      <td><label class="toggle"><input type="checkbox" ${t.free?'checked':''} onchange="state.tests[${i}].free=this.checked;saveAll();"><span class="toggle-slider"></span></label></td>
-      <td><label class="toggle"><input type="checkbox" ${t.active?'checked':''} onchange="state.tests[${i}].active=this.checked;saveAll();renderDashboard();"><span class="toggle-slider"></span></label></td>
-      <td>${total}</td>
-      <td>
-        <button class="btn btn-err btn-xs" onclick="deleteTest(${i})">Delete</button>
-        <button class="btn btn-ghost btn-xs" onclick="clearTestQuestions(${i})">Clear Qs</button>
-        <button class="btn btn-pri btn-xs" onclick="openEditTopics(${i})">📚 Topics</button>
-      </td>
-    </tr>`;
-  });
-  html+=`</tbody>`;
-  document.getElementById('tests-table').innerHTML=html;
-}
-
-function deleteTest(i){ if(confirm(`Delete "${state.tests[i].name}"?`)){ state.tests.splice(i,1); saveAll(); renderTestsTable(); populateSelects(); renderDashboard(); toast('Deleted'); } }
-function clearTestQuestions(i){ if(confirm(`Clear all questions from "${state.tests[i].name}"?`)){ state.tests[i].qbank={0:[],1:[],2:[]}; saveAll(); renderTestsTable(); renderDashboard(); toast('Cleared'); } }
-
-let editTopicsIdx=-1;
-function openEditTopics(i){
-  editTopicsIdx=i;
-  const t=state.tests[i];
-  document.getElementById('et-test-name').textContent=`Test: ${t.name} [${t.stream.toUpperCase()}]`;
-  const topics=t.topics||{};
-  document.getElementById('et-phy-topics').value=topics.phy||'';
-  document.getElementById('et-che-topics').value=topics.che||'';
-  document.getElementById('et-third-topics').value=topics.third||'';
-  const thirdLbl=document.getElementById('et-third-lbl');
-  if(t.stream==='pcm') thirdLbl.textContent='📐 Mathematics Topics';
-  else thirdLbl.textContent='🧬 Biology Topics';
-  document.getElementById('edit-topics-modal').classList.add('on');
-}
-function saveTopics(){
-  if(editTopicsIdx<0)return;
-  if(!state.tests[editTopicsIdx].topics) state.tests[editTopicsIdx].topics={};
-  state.tests[editTopicsIdx].topics.phy=document.getElementById('et-phy-topics').value.trim();
-  state.tests[editTopicsIdx].topics.che=document.getElementById('et-che-topics').value.trim();
-  state.tests[editTopicsIdx].topics.third=document.getElementById('et-third-topics').value.trim();
-  saveAll(); closeModal('edit-topics-modal'); toast('✅ Topics saved & synced to students');
-}
-
-function renderStudents(){
-  try{ const u=localStorage.getItem('mhtcet_users'); if(u)studentData.users=JSON.parse(u); }catch(e){}
-  let users=studentData.users||[];
-  if(!users.length){ document.getElementById('students-content').innerHTML='<p style="padding:20px;color:var(--muted)">No students yet.</p>'; return; }
-  let rows=[];
-  users.forEach(u=>{
-    let best=u.scores?.length?u.scores.reduce((a,b)=>b.score>a.score?b:a,u.scores[0]):null;
-    rows.push({name:u.name,mobile:u.mobile,attempts:u.scores?.length||0,bestScore:best?.score||0,bestTest:best?.testName||'—'});
-  });
-  rows.sort((a,b)=>b.bestScore-a.bestScore);
-  let html=`<table class="data-table"><thead><tr><th>Rank</th><th>Name</th><th>Mobile</th><th>Best Score</th><th>Attempts</th><th>Best Test</th></tr></thead><tbody>`;
-  rows.forEach((r,idx)=>{
-    html+=`<tr><td>#${idx+1}</td><td>${escapeHtml(r.name)}</td><td>${r.mobile}</td><td class="badge-ok">${r.bestScore}</td><td>${r.attempts}</td><td>${escapeHtml(r.bestTest)}</td></tr>`;
-  });
-  html+=`</tbody></table>`;
-  document.getElementById('students-content').innerHTML=html;
-  updateSyncStatus();
-}
-
-function clearStudentData(){ confirmClearStudentData(); }
-
-function saveSettings(){
-  state.settings.duration=parseInt(document.getElementById('set-duration').value)||180;
-  // sync price from both inputs
-  const priceDisp=parseInt(document.getElementById('set-price-display')?.value)||30;
-  const priceMain=parseInt(document.getElementById('set-amount')?.value)||30;
-  state.settings.pay_amount=priceDisp||priceMain;
-  state.settings.price=state.settings.pay_amount;
-  saveAll(); toast('✅ General settings saved');
-}
-
-// ── RAZORPAY ADMIN CONTROLS ──
-function loadRazorpaySettings(){
-  try{
-    const rzp=JSON.parse(localStorage.getItem('rzp_admin_config')||'{}');
-    if(rzp.keyId){
-      document.getElementById('rzp-key-id').value=rzp.keyId||'';
-      document.getElementById('rzp-key-secret').value=rzp.keySecret||'';
-      document.getElementById('rzp-mode').value=rzp.mode||'test';
-      document.getElementById('set-amount').value=rzp.amount||30;
-      document.getElementById('set-price-display') && (document.getElementById('set-price-display').value=rzp.amount||30);
-      showRzpCurrent(rzp);
-    }
-  }catch(e){}
-}
-
-function saveRazorpaySettings(){
-  const keyId=document.getElementById('rzp-key-id').value.trim();
-  const keySecret=document.getElementById('rzp-key-secret').value.trim();
-  const mode=document.getElementById('rzp-mode').value;
-  const amount=parseInt(document.getElementById('set-amount').value)||30;
-  if(!keyId){ toast('⚠ Enter your Razorpay Key ID'); return; }
-  if(!keyId.startsWith('rzp_')){ showRzpStatus('error','⚠ Key ID should start with rzp_test_ or rzp_live_'); return; }
-  if(mode==='live'&&keyId.startsWith('rzp_test_')){ showRzpStatus('warn','⚠ You selected Live mode but entered a Test key. Please check.'); }
-  if(mode==='test'&&keyId.startsWith('rzp_live_')){ showRzpStatus('warn','⚠ You selected Test mode but entered a Live key. Please check.'); }
-  const cfg={keyId,keySecret,mode,amount,savedAt:new Date().toISOString()};
-  localStorage.setItem('rzp_admin_config',JSON.stringify(cfg));
-  // Push key to student-readable storage so student file picks it up
-  state.settings.pay_amount=amount;
-  state.settings.price=amount;
-  state.settings.rzp_key_id=keyId;
-  state.settings.rzp_mode=mode;
-  saveAll();
-  showRzpCurrent(cfg);
-  showRzpStatus('ok','✅ Razorpay settings saved & synced to student app!');
-  document.getElementById('rzp-saved-indicator').textContent='Last saved: '+new Date().toLocaleTimeString();
-  toast('✅ Razorpay configured! Students can now pay via Razorpay.');
-}
-
-function showRzpCurrent(cfg){
-  if(!cfg||!cfg.keyId)return;
-  const box=document.getElementById('rzp-current');
-  const keyEl=document.getElementById('rzp-current-key');
-  const modeEl=document.getElementById('rzp-current-mode');
-  box.style.display='block';
-  // Mask key: show first 12 + last 4 chars
-  const k=cfg.keyId;
-  keyEl.textContent=k.length>16?k.substring(0,12)+'••••'+k.slice(-4):k;
-  modeEl.textContent=cfg.mode==='live'?'🚀 LIVE':'🧪 TEST';
-  modeEl.style.background=cfg.mode==='live'?'#e8f5e9':'#fff3e0';
-  modeEl.style.color=cfg.mode==='live'?'var(--ok)':'#e65100';
-}
-
-function showRzpStatus(type,msg){
-  const box=document.getElementById('rzp-status-box');
-  const colors={ok:['#e8f5e9','#1b5e20','#a5d6a7'],warn:['#fff8e1','#5d4037','#ffe082'],error:['#ffebee','#b71c1c','#ef9a9a']};
-  const [bg,txt,bdr]=colors[type]||colors.ok;
-  box.style.cssText=`display:block;background:${bg};border:1.5px solid ${bdr};color:${txt};border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px`;
-  box.textContent=msg;
-}
-
-function toggleSecretVis(){
-  const inp=document.getElementById('rzp-key-secret');
-  const btn=document.getElementById('rzp-eye-btn');
-  if(inp.type==='password'){inp.type='text';btn.textContent='🙈';}
-  else{inp.type='password';btn.textContent='👁';}
-}
-
-function testRazorpayKey(){
-  const keyId=document.getElementById('rzp-key-id').value.trim();
-  if(!keyId){showRzpStatus('error','Enter a Key ID first.');return;}
-  if(!keyId.startsWith('rzp_test_')&&!keyId.startsWith('rzp_live_')){
-    showRzpStatus('error','⚠ Invalid format. Key ID must start with rzp_test_ or rzp_live_');return;
-  }
-  const isTest=keyId.startsWith('rzp_test_');
-  const isLive=keyId.startsWith('rzp_live_');
-  // We can't call Razorpay API directly (CORS), so just validate format
-  if(keyId.length<25){showRzpStatus('error','⚠ Key ID looks too short. Please double-check.');return;}
-  showRzpStatus('ok',`✅ Key format looks valid (${isLive?'🚀 LIVE key':'🧪 TEST key'}). Save to apply.`);
-}
-// changePassword defined below in security engine
-// ── CONTACT SETTINGS ──
-function loadContactSettings(){
-  try{
-    const wa=document.getElementById('contact-wa');
-    const tg=document.getElementById('contact-tg');
-    const waMsg=document.getElementById('contact-wa-msg');
-    const heading=document.getElementById('contact-heading');
-    if(state.settings.contact){
-      if(wa) wa.value=state.settings.contact.wa||'';
-      if(tg) tg.value=state.settings.contact.tg||'';
-      if(waMsg) waMsg.value=state.settings.contact.waMsg||'Hi, I need help with PrepXpert';
-      if(heading) heading.value=state.settings.contact.heading||'Need Help? Contact Us!';
-    }
-  }catch(e){}
-}
-function saveContactSettings(){
-  const wa=(document.getElementById('contact-wa').value||'').trim().replace(/\D/g,'');
-  const tg=(document.getElementById('contact-tg').value||'').trim().replace(/^@/,'');
-  const waMsg=(document.getElementById('contact-wa-msg').value||'').trim();
-  const heading=(document.getElementById('contact-heading').value||'').trim()||'Need Help? Contact Us!';
-  if(!wa&&!tg){toast('⚠ Enter at least one contact (WhatsApp or Telegram)');return;}
-  state.settings.contact={wa,tg,waMsg,heading};
-  saveAll();
-  document.getElementById('contact-saved-indicator').textContent='Last saved: '+new Date().toLocaleTimeString();
-  toast('✅ Contact settings saved & synced to student app!');
-  previewContactSettings();
-}
-function previewContactSettings(){
-  const wa=(document.getElementById('contact-wa').value||'').trim().replace(/\D/g,'');
-  const tg=(document.getElementById('contact-tg').value||'').trim().replace(/^@/,'');
-  const waMsg=encodeURIComponent((document.getElementById('contact-wa-msg').value||'Hi, I need help with PrepXpert').trim());
-  const box=document.getElementById('contact-preview');
-  const inner=document.getElementById('contact-preview-inner');
-  let html='';
-  if(wa) html+=`<a href="https://wa.me/${wa}?text=${waMsg}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#fff;padding:12px 20px;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none">💬 WhatsApp</a>`;
-  if(tg){
-    const tgHref=/^\d+$/.test(tg)?`https://t.me/+${tg}`:`https://t.me/${tg}`;
-    html+=`<a href="${tgHref}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;background:#229ED9;color:#fff;padding:12px 20px;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none">✈️ Telegram</a>`;
-  }
-  inner.innerHTML=html||'<span style="color:var(--muted);font-size:13px">Enter numbers above to preview</span>';
-  box.style.display='block';
-}
-
-function exportData(){ let blob=new Blob([JSON.stringify({state,studentData},null,2)],{type:'application/json'}); let a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`mhtcet_backup_${Date.now()}.json`; a.click(); }
-function importBackup(){ document.getElementById('import-file').click(); }
-function handleImportFile(inp){ if(!inp.files[0])return; let r=new FileReader(); r.onload=e=>{ try{ let d=JSON.parse(e.target.result); if(d.state)state=d.state; if(d.studentData)studentData=d.studentData; state.tests.forEach(t=>{if(!t.qbank)t.qbank={0:[],1:[],2:[]};if(!t.stream)t.stream='pcm';}); saveAll(); renderDashboard(); populateSelects(); renderTestsTable(); toast('Import success'); }catch(err){toast('Invalid file');} }; r.readAsText(inp.files[0]); }
-
-function updateNewTestModal(){
-  const s=document.getElementById('nt-stream').value;
-  const info=document.getElementById('nt-stream-info');
-  const thirdLbl=document.getElementById('nt-third-lbl');
-  const thirdInp=document.getElementById('nt-third-topics');
-  if(s==='pcm'){
-    info.textContent='50 Physics + 50 Chemistry + 50 Mathematics · 200 Marks';
-    thirdLbl.textContent='📐 Mathematics Topics';
-    thirdInp.placeholder='e.g. Algebra, Calculus, Trigonometry';
-  } else if(s==='pcb'){
-    info.textContent='50 Physics + 50 Chemistry + 100 Biology · 200 Marks';
-    thirdLbl.textContent='🧬 Biology Topics';
-    thirdInp.placeholder='e.g. Cell Biology, Genetics, Ecology';
-  } else if(s==='jee'){
-    info.textContent='30 Physics + 30 Chemistry + 30 Mathematics · 360 Marks · Last 5 Numerical per subject';
-    thirdLbl.textContent='📐 Mathematics Topics';
-    thirdInp.placeholder='e.g. Calculus, Algebra, Coordinate Geometry';
-  } else {
-    info.textContent='45 Physics + 45 Chemistry + 90 Biology · 720 Marks · Negative Marking (-1 per wrong)';
-    thirdLbl.textContent='🧬 Biology Topics';
-    thirdInp.placeholder='e.g. Human Physiology, Genetics, Plant Kingdom';
-  }
-}
-
-function addNewTest(){
-  let name=document.getElementById('nt-name').value.trim();
-  if(!name){toast('Enter name');return;}
-  let stream=document.getElementById('nt-stream').value;
-  let free=document.getElementById('nt-type').value==='1';
-  let desc=document.getElementById('nt-desc').value.trim();
-  let streamDesc=stream==='neet'?'NEET Mock — 180Qs, 720 marks, -1 marking':stream==='jee'?'JEE Mock — 90Qs (Last 5 Numerical), 360 marks, -1 MCQ marking':stream.toUpperCase()+' test';
-  let phyTopics=document.getElementById('nt-phy-topics').value.trim();
-  let cheTopics=document.getElementById('nt-che-topics').value.trim();
-  let thirdTopics=document.getElementById('nt-third-topics').value.trim();
-  let newId=state.tests.length?Math.max(...state.tests.map(t=>t.id||0))+1:0;
-  state.tests.push({id:newId,name,stream,active:false,free,desc:desc||streamDesc,topics:{phy:phyTopics,che:cheTopics,third:thirdTopics},qbank:{0:[],1:[],2:[]}});
-  closeModal('new-test-modal');
-  saveAll(); renderTestsTable(); populateSelects(); renderDashboard();
-  toast(`Added ${name} [${stream.toUpperCase()}]`);
-}
-
-function openNewTestModal(){
-  document.getElementById('nt-name').value='';
-  document.getElementById('nt-desc').value='';
-  document.getElementById('nt-phy-topics').value='';
-  document.getElementById('nt-che-topics').value='';
-  document.getElementById('nt-third-topics').value='';
-  document.getElementById('nt-stream').value='pcm';
-  document.getElementById('nt-type').value='1';
-  updateNewTestModal();
-  document.getElementById('new-test-modal').classList.add('on');
-}
-
-function closeModal(id){ document.getElementById(id).classList.remove('on'); }
-
-
-function navTo(page,el){
-  console.log("👉 page clicked:", page);  // 🔥 ADD THIS
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
-  document.getElementById(`page-${page}`)?.classList.add('on');
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('on'));
-  if(el)el.classList.add('on');
-  let titles={dashboard:'Dashboard',bulk150:'PCM/PCB Bulk Import',bulkneet:'NEET Bulk Import',bulkjee:'JEE Bulk Import',tests:'Manage Tests',questions:'Question Bank + Images',anskey:'Answer Key',students:'Students & Ranking',settings:'Settings'};
-  document.getElementById('page-title').textContent=titles[page]||page;
-  if(page==='dashboard')renderDashboard();
-  if(page==='tests')renderTestsTable();
-  if(page === 'students') loadScoresFromDB();
-  if(page==='questions'){populateSelects();loadQuestionsForImageManage();}
-  if(page==='bulk150')populateSelects();
-  if(page==='bulkneet')populateSelects();
-  if(page==='bulkjee')populateSelects();
-  if(page==='settings'){populateSelects();loadRazorpaySettings();loadContactSettings();}
-}
-
-// ═══════════════════════ SECURITY ENGINE ═══════════════════════
-
-// --- Anti-DevTools ---
- /*function(){
-  // Block right-click everywhere
-  document.addEventListener('contextmenu', e => e.preventDefault());
-  // Block common DevTools shortcuts
-  document.addEventListener('keydown', e => {
-    if(e.key==='F12') { e.preventDefault(); return false; }
-    if(e.ctrlKey && e.shiftKey && ['i','j','c','k','s','u'].includes(e.key.toLowerCase())) { e.preventDefault(); return false; }
-    if(e.ctrlKey && ['u','s'].includes(e.key.toLowerCase())) { e.preventDefault(); return false; }
-    if(e.ctrlKey && e.key==='p') { e.preventDefault(); return false; }
-  });*/
-  // Detect DevTools open (size-based, desktop only)
-  const _isMob=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||('ontouchstart' in window);
-  let devOpen=false;
-  if(!_isMob){
-    //setInterval(()=>{
-      //if(window.outerWidth-window.innerWidth>160||window.outerHeight-window.innerHeight>160){
-        //if(!devOpen){devOpen=true;document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#1a237e;color:#fff;font-size:22px;font-weight:700;flex-direction:column;gap:12px"><div>🔒 Access Denied</div><div style="font-size:13px;font-weight:400;color:rgba(255,255,255,.6)">Close developer tools to continue.</div></div>';}
-      } else { if(devOpen) location.reload(); }
-    800;
-  
-  // Block copy/paste of page content
-  document.addEventListener('copy', e => { e.clipboardData.setData('text/plain',''); e.preventDefault(); });
-  document.addEventListener('cut',  e => { e.clipboardData.setData('text/plain',''); e.preventDefault(); });
-  // Disable drag
-  document.addEventListener('dragstart', e => e.preventDefault());
-  // Disable print
-  window.addEventListener('beforeprint', e => { e.preventDefault(); window.stop(); });
-
-
-// --- SHA-256 hash (crypto API) ---
 async function sha256(msg){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -1544,14 +1422,17 @@ async function verifyAdminPass(){
   const inp = document.getElementById('ag-pass').value;
   if(!inp){ document.getElementById('ag-err').textContent='Enter password.'; return; }
 
-  // Get stored hash — set by admin on first use
+  // Get stored hash — set by admin on first use (no default for security)
   let storedHash = localStorage.getItem('_admin_ph');
   if(!storedHash){
     // First run: set default password hash
-    // ── SECURITY: No default password hardcoded. Force admin to set one first. ──
-    document.getElementById('ag-err').textContent = '⚠ No admin password set. Use setup mode to create one.';
+    // No default password — admin must set one first via the password change section
+    document.getElementById('ag-err').textContent = '⚠ No password set yet. Use the Setup section to create one first.';
     document.getElementById('ag-pass').value = '';
     return;
+    localStorage.setItem('_admin_ph', storedHash);
+    // Remove old plain-text password if any
+    localStorage.removeItem('mhtcet_admin_pass');
   }
   const inpHash = await sha256(inp);
 
@@ -1572,10 +1453,17 @@ async function verifyAdminPass(){
   // Correct — reset lockout
   saveLockoutState({});
   // Store session with timestamp
-  sessionStorage.setItem('_admin_sess', JSON.stringify({ts: Date.now()})); // sessionStorage: cleared on tab close
+  // Store admin key in memory (entered in password field = api key)
+  // Note: For a more secure setup, admin API key is entered separately
+  sessionStorage.setItem('_admin_sess', JSON.stringify({ts: Date.now()}));
+  // Prompt for API key if not set
+  const apiKey = sessionStorage.getItem('_admin_api_key') || prompt('Enter your Admin API Key (from Render env vars):');
+  if(!apiKey){ document.getElementById('ag-err').textContent='API key required.'; return; }
+  ADMIN_KEY = apiKey.trim();
+  sessionStorage.setItem('_admin_api_key', ADMIN_KEY);
   document.getElementById('admin-gate').style.display='none';
   document.getElementById('admin-layout').style.display='flex';
-  loadState(); renderDashboard(); populateSelects(); saveAll();
+  loadState();
 }
 
 // Upgrade changePassword to use SHA-256
@@ -1595,8 +1483,8 @@ async function changePassword(){
 (function(){
   // Check existing session (4hr expiry)
   try{
-    const sess = JSON.parse(sessionStorage.getItem('_admin_sess')||'{}');
-    if(sess.ts && Date.now()-sess.ts < 2*3600000){ // 2h expiry
+    const sess = JSON.parse(localStorage.getItem('_admin_sess')||'{}');
+    if(sess.ts && Date.now()-sess.ts < 4*3600000){
       document.getElementById('admin-gate').style.display='none';
       document.getElementById('admin-layout').style.display='flex';
       loadState(); renderDashboard(); populateSelects(); saveAll();
@@ -1623,240 +1511,6 @@ async function changePassword(){
 let allData = [];
 
 // ✅ Load scores from DB with loading state
-function loadScoresFromDB() {
-  const loadingEl = document.getElementById('ranking-loading');
-  const rankingEl = document.getElementById('ranking');
-  const refreshBtn = document.getElementById('refresh-btn');
-
-  if (loadingEl) { loadingEl.style.display = 'block'; }
-  if (rankingEl) { rankingEl.style.opacity = '0.4'; }
-  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '⏳ Loading...'; }
-
-  if (rankingEl) rankingEl.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">⏳ Connecting to server… (may take up to 30s on first load)</div>';
-
-  fetchWithRetry(BASE_URL + "/results")
-    .then(res => {
-      return res.json();
-    })
-    .then(scores => {
-      allData = scores;
-      window.allData = scores;
-      // Reset search/filter on fresh load
-      const searchEl = document.getElementById('search-student');
-      if (searchEl) searchEl.value = '';
-      const filterEl = document.getElementById('filter-type');
-      if (filterEl) filterEl.value = 'ALL';
-      renderRanking(scores);
-    })
-    .catch(err => {
-      console.error("❌ Error loading scores:", err);
-      if (rankingEl) rankingEl.innerHTML = `
-        <div style="text-align:center;padding:40px;color:var(--err)">
-          ⚠️ Could not connect to backend server after multiple retries.<br>
-          <small style="color:var(--muted)">Backend URL: <code style="font-size:11px">https://backend-67yk.onrender.com</code><br>Check your Render dashboard to make sure the service is deployed and running.</small><br>
-          <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="loadScoresFromDB()">Retry</button>
-        </div>`;
-    })
-    .finally(() => {
-      if (loadingEl) { loadingEl.style.display = 'none'; }
-      if (rankingEl) { rankingEl.style.opacity = '1'; }
-      if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '🔄 Refresh'; }
-    });
-}
-
-// ✅ Apply search + filter without re-fetching
-function applyFilters() {
-  const query = (document.getElementById('search-student')?.value || '').trim().toLowerCase();
-  const typeFilter = (document.getElementById('filter-type')?.value || 'ALL').toUpperCase();
-
-  let filtered = allData.filter(s => {
-    const matchType = typeFilter === 'ALL' || (s.type || '').toUpperCase() === typeFilter;
-    const matchName = !query || (s.name || '').toLowerCase().includes(query);
-    return matchType && matchName;
-  });
-  renderRanking(filtered);
-}
-
-// ✅ Render ranking tabs
-function renderRanking(data) {
-  const container = document.getElementById("ranking");
-  if (!container) return;
-
-  if (!data || !Array.isArray(data)) {
-    container.innerHTML = '<p style="color:gray;padding:20px">No data.</p>';
-    return;
-  }
-
-  const pcm  = data.filter(s => (s.type || '').toUpperCase() === 'PCM');
-  const pcb  = data.filter(s => (s.type || '').toUpperCase() === 'PCB');
-  const neet = data.filter(s => (s.type || '').toUpperCase() === 'NEET');
-  const jee  = data.filter(s => (s.type || '').toUpperCase() === 'JEE');
-
-  container.innerHTML = `
-    <div class="tab-buttons">
-      <button onclick="showTab('pcm', this)" class="active-tab">🏆 PCM (${pcm.length})</button>
-      <button onclick="showTab('pcb', this)">🧬 PCB (${pcb.length})</button>
-      <button onclick="showTab('neet', this)">🩺 NEET (${neet.length})</button>
-      <button onclick="showTab('jee', this)">⚙️ JEE (${jee.length})</button>
-    </div>
-    <div id="pcmTab"  class="tab-content" style="display:block"></div>
-    <div id="pcbTab"  class="tab-content" style="display:none"></div>
-    <div id="neetTab" class="tab-content" style="display:none"></div>
-    <div id="jeeTab"  class="tab-content" style="display:none"></div>
-  `;
-
-  renderTable("pcmTab",  pcm);
-  renderTable("pcbTab",  pcb);
-  renderTable("neetTab", neet);
-  renderTable("jeeTab",  jee);
-
-  // Keep active tab visible after re-render
-  const firstBtn = document.querySelector('.tab-buttons button:first-child');
-  if (firstBtn) firstBtn.classList.add('active-tab');
-}
-
-// ✅ Render individual table with proper ranking (handles ties)
-function renderTable(id, data) {
-  const el = document.getElementById(id);
-  if (!el) return;
-
-  if (!data.length) {
-    el.innerHTML = "<p style='color:gray;padding:20px;text-align:center;'>No data available for this category.</p>";
-    return;
-  }
-
-  // Sort by score descending, then by date (oldest first) for tie-breaking
-  data.sort((a, b) => b.score !== a.score ? b.score - a.score : new Date(a.date) - new Date(b.date));
-
-  // ✅ Proper tie handling: same score = same rank
-  let html = `
-    <div class="table-card" style="overflow-x:auto">
-      <table class="modern-table" style="min-width:480px">
-        <tr>
-          <th>🏆 Rank</th>
-          <th>👤 Name</th>
-          <th>📊 Score</th>
-          <th>📈 %</th>
-          <th>📅 Date</th>
-        </tr>
-  `;
-
-  let displayRank = 1;
-  data.forEach((s, i) => {
-    if (i > 0 && s.score !== data[i - 1].score) {
-      displayRank = i + 1; // Gap in rank for ties
-    }
-    const rank = displayRank;
-
-    let rankClass = 'rank-other';
-    let rowStyle = '';
-    if (rank === 1) { rankClass = 'rank-1'; rowStyle = 'background:#fffde7;'; }
-    else if (rank === 2) { rankClass = 'rank-2'; rowStyle = 'background:#f5f5f5;'; }
-    else if (rank === 3) { rankClass = 'rank-3'; rowStyle = 'background:#fff8f2;'; }
-
-    const pct = s.total ? Math.round((s.score / s.total) * 100) : 0;
-
-    const dateStr = s.date ? (() => {
-      try { return new Date(s.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-      catch(e) { return s.date; }
-    })() : 'N/A';
-
-    html += `
-      <tr style="${rowStyle}">
-        <td><span class="rank-badge ${rankClass}">#${rank}</span></td>
-        <td>${escapeHtml(s.name || 'Unknown')}</td>
-        <td class="score">${s.score}/${s.total}</td>
-        <td style="font-weight:600;color:${pct >= 80 ? '#1b5e20' : pct >= 50 ? '#e65100' : '#b71c1c'}">${pct}%</td>
-        <td style="font-size:11px;color:#666">${dateStr}</td>
-      </tr>
-    `;
-  });
-
-  html += `</table></div>`;
-  el.innerHTML = html;
-}
-
-// ✅ Tab switcher
-function showTab(type, btn) {
-  document.querySelectorAll('.tab-content').forEach(div => div.style.display = 'none');
-  document.querySelectorAll('.tab-buttons button').forEach(b => b.classList.remove('active-tab'));
-  const tab = document.getElementById(type + 'Tab');
-  if (tab) tab.style.display = 'block';
-  if (btn) btn.classList.add('active-tab');
-}
-
-// ✅ Clear all student data with proper confirmation
-function confirmClearStudentData() {
-  if (!confirm('⚠️ Are you sure you want to DELETE ALL student results?\n\nThis action CANNOT be undone!')) return;
-  if (!confirm('🔴 FINAL CHECK: This will permanently delete ALL ranking data from the database. Continue?')) return;
-
-  fetchWithRetry(BASE_URL + '/clear-results', { method: 'GET' })
-    .then(res => {
-      if (!res.ok) throw new Error('Server error');
-      return res.json();
-    })
-    .then(() => {
-      allData = [];
-      window.allData = [];
-      renderRanking([]);
-      toast('✅ All student results cleared from database.');
-    })
-    .catch(err => {
-      toast('❌ Failed to clear results. Check server connection.');
-      console.error(err);
-    });
-}
-
-// Keep old clearStudentData for backward compat (local only)
-function clearStudentData() {
-  confirmClearStudentData();
-}
-
-// ✅ Export to Excel with proper rank numbers
-function exportToExcel() {
-  if (!window.allData || !window.allData.length) {
-    alert("No data to export ❌");
-    return;
-  }
-
-  const pcm  = allData.filter(s => (s.type || '').toUpperCase() === 'PCM').sort((a, b) => b.score - a.score);
-  const pcb  = allData.filter(s => (s.type || '').toUpperCase() === 'PCB').sort((a, b) => b.score - a.score);
-  const neet = allData.filter(s => (s.type || '').toUpperCase() === 'NEET').sort((a, b) => b.score - a.score);
-  const jee  = allData.filter(s => (s.type || '').toUpperCase() === 'JEE').sort((a, b) => b.score - a.score);
-
-  const formatData = (data) => {
-    let displayRank = 1;
-    return data.map((s, i) => {
-      if (i > 0 && s.score !== data[i - 1].score) displayRank = i + 1;
-      const pct = s.total ? Math.round((s.score / s.total) * 100) : 0;
-      const dateStr = s.date ? (() => { try { return new Date(s.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); } catch(e) { return s.date; } })() : 'N/A';
-      return {
-        Rank: displayRank,
-        Name: s.name || 'Unknown',
-        Type: s.type || '-',
-        Score: `${s.score}/${s.total}`,
-        Percentage: pct + '%',
-        Date: dateStr
-      };
-    });
-  };
-
-  const wb = XLSX.utils.book_new();
-  if (pcm.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatData(pcm)),  'PCM');
-  if (pcb.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatData(pcb)),  'PCB');
-  if (neet.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatData(neet)), 'NEET');
-  if (jee.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatData(jee)),  'JEE');
-
-  if (!wb.SheetNames.length) { alert('No data to export.'); return; }
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-  XLSX.writeFile(wb, `PrepXpert_Rankings_${timestamp}.xlsx`);
-  alert(`✅ Exported!\nPCM: ${pcm.length} | PCB: ${pcb.length} | NEET: ${neet.length} | JEE: ${jee.length} records`);
-}
-
-
-// (ranking functions defined above — this block intentionally left empty to avoid duplicates)
-
 </script>
 </body>
 </html>
