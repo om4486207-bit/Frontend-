@@ -1363,7 +1363,7 @@ function showResults(){
     const maxScore=actualQ*sub.marks;
     secStats.push({c,w,sk,sc,neg,tot:maxScore});
     totScore+=sc; totC+=c; totW+=w; totS+=sk; totNeg+=neg;
-  });const name = prompt("Enter your name:");
+  });const name = currentUser?.name || currentUser?.mobile || 'Unknown';
 
   // Calculate max possible marks BEFORE saving so we can send it as total
   const totalMarks=SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0);
