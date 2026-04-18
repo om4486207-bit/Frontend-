@@ -600,7 +600,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
         <div class="frow c2">
           <div class="fgrp">
             <label>Razorpay Key ID *</label>
-            <input type="text" id="rzp-key-id" placeholder="rzp_test_XXXXXXXXXXXXXXXX" autocomplete="off" style="font-family:monospace;font-size:13px">
+            <input type="password" id="rzp-key-id" placeholder="rzp_live_XXXXXXXXXXXXXXXX" autocomplete="off" style="font-family:monospace;font-size:13px" title="Your Razorpay Key ID">
           </div>
           <div class="fgrp">
             <label>Razorpay Key Secret *</label>
@@ -1544,14 +1544,14 @@ async function verifyAdminPass(){
   const inp = document.getElementById('ag-pass').value;
   if(!inp){ document.getElementById('ag-err').textContent='Enter password.'; return; }
 
-  // Get stored hash — default is hash of 'Admin@PrepXpert#9' (first-run default)
+  // Get stored hash — set by admin on first use
   let storedHash = localStorage.getItem('_admin_ph');
   if(!storedHash){
     // First run: set default password hash
-    storedHash = await sha256('Admin@PrepXpert#9');
-    localStorage.setItem('_admin_ph', storedHash);
-    // Remove old plain-text password if any
-    localStorage.removeItem('mhtcet_admin_pass');
+    // ── SECURITY: No default password hardcoded. Force admin to set one first. ──
+    document.getElementById('ag-err').textContent = '⚠ No admin password set. Use setup mode to create one.';
+    document.getElementById('ag-pass').value = '';
+    return;
   }
   const inpHash = await sha256(inp);
 
@@ -1572,7 +1572,7 @@ async function verifyAdminPass(){
   // Correct — reset lockout
   saveLockoutState({});
   // Store session with timestamp
-  localStorage.setItem('_admin_sess', JSON.stringify({ts: Date.now()}));
+  sessionStorage.setItem('_admin_sess', JSON.stringify({ts: Date.now()})); // sessionStorage: cleared on tab close
   document.getElementById('admin-gate').style.display='none';
   document.getElementById('admin-layout').style.display='flex';
   loadState(); renderDashboard(); populateSelects(); saveAll();
@@ -1595,8 +1595,8 @@ async function changePassword(){
 (function(){
   // Check existing session (4hr expiry)
   try{
-    const sess = JSON.parse(localStorage.getItem('_admin_sess')||'{}');
-    if(sess.ts && Date.now()-sess.ts < 4*3600000){
+    const sess = JSON.parse(sessionStorage.getItem('_admin_sess')||'{}');
+    if(sess.ts && Date.now()-sess.ts < 2*3600000){ // 2h expiry
       document.getElementById('admin-gate').style.display='none';
       document.getElementById('admin-layout').style.display='flex';
       loadState(); renderDashboard(); populateSelects(); saveAll();
