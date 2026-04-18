@@ -280,6 +280,11 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
     <div class="agate-err" id="ag-err"></div>
     <div id="ag-lockout" style="display:none;color:#b71c1c;font-size:12px;margin-bottom:8px;font-weight:700;"></div>
     <button id="ag-btn" onclick="verifyAdminPass()">🔐 Unlock Admin</button>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e6f0;">
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:8px;">Locked out? Reset the attempt counter:</div>
+      <button onclick="emergencyReset()" style="width:100%;padding:10px;background:#fff3e0;color:#e65100;border:1.5px solid #ffcc80;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">🔓 Reset Lockout</button>
+      <div id="reset-msg" style="display:none;margin-top:8px;font-size:12px;color:#2e7d32;font-weight:700;">✅ Lockout cleared! You can try again.</div>
+    </div>
   </div>
 </div>
 
@@ -1407,6 +1412,15 @@ function getLockoutState(){
   try{ return JSON.parse(localStorage.getItem('_admin_lock')||'{}'); }catch(e){ return {}; }
 }
 function saveLockoutState(s){ localStorage.setItem('_admin_lock', JSON.stringify(s)); }
+
+function emergencyReset(){
+  localStorage.removeItem('_admin_lock');
+  document.getElementById('ag-lockout').style.display='none';
+  document.getElementById('ag-btn').disabled=false;
+  document.getElementById('ag-err') && (document.getElementById('ag-err').textContent='');
+  document.getElementById('reset-msg').style.display='block';
+  setTimeout(()=>{ document.getElementById('reset-msg').style.display='none'; }, 3000);
+}
 
 async function verifyAdminPass(){
   const lock = getLockoutState();
