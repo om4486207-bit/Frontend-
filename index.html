@@ -937,9 +937,27 @@ function loadData(){
         if(p.settings) settings={...settings,...p.settings};
         // Ensure NEET tests have stream property
         tests.forEach(t=>{ if(!t.stream)t.stream='pcm'; if(!t.qbank)t.qbank={0:[],1:[],2:[]}; });
-        // Preserve unlocked state
-        tests.forEach(t=>{ if(localStorage.getItem('unlocked_'+t.id)==='1')t.unlocked=true; });
-        if(localStorage.getItem('mhtcet_full_access')==='1') tests.forEach(t=>t.unlocked=true);
+        // ── SECURITY: verify unlock token against backend, not plain localStorage flag ──
+        const _tokenRec = (() => { try{ return JSON.parse(localStorage.getItem('mhtcet_unlock_token')||'{}'); }catch(e){ return {}; } })();
+        const _mobile = currentUser?.mobile || '';
+        if(_tokenRec.token && _tokenRec.mobile === _mobile){
+          // Re-verify token is still valid with backend (fire-and-forget; if fails, user must re-pay next session)
+          fetchWithRetry(`${API}/check-unlock`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ token: _tokenRec.token, mobile: _mobile })
+          }).then(r=>r.json()).then(d=>{
+            if(d.valid){
+              tests.forEach(t=>t.unlocked=true);
+              renderHome();
+            } else {
+              localStorage.removeItem('mhtcet_unlock_token');
+              tests.forEach(t=>t.unlocked=false);
+              renderHome();
+              toast('⚠ Your session expired. Please re-verify your payment.');
+            }
+          }).catch(()=>{ /* offline — keep current unlocked state from token */ tests.forEach(t=>t.unlocked=true); });
+        }
         return;
       }
     }
@@ -1473,12 +1491,12 @@ function getRzpKeyId(){
     const cfg=JSON.parse(localStorage.getItem('rzp_admin_config')||'{}');
     if(cfg.keyId && cfg.keyId.startsWith('rzp_')) return cfg.keyId;
   }catch(e){}
-  // 3. Fallback placeholder
-  return 'rzp_test_XXXXXXXXXXXXXXXX';
+  // 3. No valid key found — return empty; UI will show 'not configured'
+  return '';
 }
 
 function unlockTest(id){
-  if(localStorage.getItem('mhtcet_full_access')==='1'){ const t=tests.find(tt=>tt.id===id); if(t){t.unlocked=true;openInst(id);return;} }
+  // ── SECURITY: removed plain localStorage bypass; token is re-verified in loadData ──
   pendingPaid=id;
   document.getElementById('pay-amount').textContent=settings.price||30;
   document.getElementById('pay-processing').style.display='none';
@@ -1487,19 +1505,29 @@ function unlockTest(id){
   // Warn if Razorpay key not yet configured
   const rzpKey=getRzpKeyId();
   const rzpWarn=document.getElementById('rzp-not-configured');
-  if(rzpWarn) rzpWarn.style.display=rzpKey==='rzp_test_XXXXXXXXXXXXXXXX'?'block':'none';
+  if(rzpWarn) rzpWarn.style.display=(!rzpKey||rzpKey.length<10)?'block':'none';
+  // Disable button if Razorpay not yet configured
+  const rzpBtn = document.getElementById('rzp-pay-btn');
+  if(rzpBtn) rzpBtn.disabled = (!rzpKey || rzpKey.length < 10);
   document.getElementById('pay-modal').classList.add('on');
 }
 
-function _doUnlockAll(){
-  localStorage.setItem('mhtcet_full_access','1');
-  tests.forEach(t=>{t.unlocked=true;localStorage.setItem('unlocked_'+t.id,'1');});
+function _doUnlockAll(serverToken){
+  // ── SECURITY: Only unlock if server issued a valid token ──
+  if(!serverToken || typeof serverToken !== 'string' || serverToken.length < 16){
+    toast('⚠ Unlock failed: invalid server token. Contact support.');
+    return;
+  }
+  // Store token so the app can re-verify on next page load
+  const tokenRecord = { token: serverToken, mobile: currentUser?.mobile || '', ts: Date.now() };
+  localStorage.setItem('mhtcet_unlock_token', JSON.stringify(tokenRecord));
+  tests.forEach(t=>{ t.unlocked=true; });
   if(currentUser){
     const users=getUsers();
     const idx=users.findIndex(u=>u.mobile===currentUser.mobile);
     if(idx>=0){users[idx].paid=true;saveUsers(users);currentUser=users[idx];localStorage.setItem('mhtcet_current_user',JSON.stringify(currentUser));}
   }
-  closeModal('pay-modal'); renderHome(); toast('✅ Payment successful! All tests unlocked!');
+  closeModal('pay-modal'); renderHome(); toast('✅ Payment verified! All tests unlocked!');
   const t=tests.find(tt=>tt.id===pendingPaid); if(t&&(t.qbank?.[0]?.length||t.qbank?.[1]?.length)) openInst(pendingPaid);
 }
 
@@ -1514,9 +1542,35 @@ function startRazorpayPayment(){
     prefill:{name:currentUser?.name||'',contact:currentUser?.mobile||''},
     theme:{color:'#1a237e'},
     handler:function(response){
-      document.getElementById('pay-processing').style.display='none';
-      document.getElementById('pay-success-msg').style.display='block';
-      setTimeout(()=>{ _doUnlockAll(); },1200);
+      // ── SECURITY: Verify payment with backend before unlocking ──
+      document.getElementById('pay-processing').style.display='block';
+      document.getElementById('rzp-pay-btn').style.display='none';
+      fetchWithRetry(`${API}/verify-payment`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_order_id:   response.razorpay_order_id   || '',
+          razorpay_signature:  response.razorpay_signature  || '',
+          userMobile: currentUser?.mobile || ''
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('pay-processing').style.display='none';
+        if(data.success){
+          document.getElementById('pay-success-msg').style.display='block';
+          setTimeout(()=>{ _doUnlockAll(data.token); }, 1200);
+        } else {
+          document.getElementById('rzp-pay-btn').style.display='block';
+          toast('⚠ Payment verification failed: ' + (data.message||'Please contact support.'));
+        }
+      })
+      .catch(()=>{
+        document.getElementById('pay-processing').style.display='none';
+        document.getElementById('rzp-pay-btn').style.display='block';
+        toast('⚠ Could not verify payment. Contact support with your payment ID: '+response.razorpay_payment_id);
+      });
     },
     modal:{
       ondismiss:function(){
@@ -1686,7 +1740,7 @@ function enterApp(){
   document.getElementById('main-hdr').style.display='flex';
   document.querySelectorAll('.scr').forEach(s=>s.style.display='');
   if(currentUser)document.getElementById('hdr-user').textContent='👤 '+currentUser.name.split(' ')[0];
-  if(currentUser?.paid) localStorage.setItem('mhtcet_full_access','1');
+  // ── SECURITY: do NOT honour localStorage 'mhtcet_full_access' — token re-verified in loadData ──
   loadData(); renderHero(); renderSubStrip(); renderHome(); showScr('hs');
 }
 function showLoginScreen(){
