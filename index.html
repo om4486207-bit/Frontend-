@@ -127,6 +127,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 .slbl.m{background:var(--mat);}
 .slbl.b{background:var(--bio);}
 .slbl.nb{background:var(--neet);}
+.slbl.jee{background:var(--jee);}
 .qgrd{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:8px;}
 .qbtn{width:34px;height:34px;border-radius:10px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:var(--nv);color:#fff;transition:all .12s;display:flex;align-items:center;justify-content:center;}
 .qbtn:hover{transform:scale(1.15);}
@@ -160,6 +161,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 .src.m h4{color:var(--mat);}
 .src.b h4{color:var(--bio);}
 .src.nb h4{color:var(--neet);}
+.src.jee h4{color:var(--jee);}
 .pbar{background:var(--bdr);border-radius:4px;height:7px;margin:5px 0;overflow:hidden;}
 .pfill{height:100%;border-radius:4px;transition:width 1.2s ease;}
 .arev{background:var(--card);border-radius:12px;border:1px solid var(--bdr);padding:22px;}
@@ -218,6 +220,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 .stream-tab-btn.active-pcm{background:linear-gradient(135deg,#1e3a8a,#1d4ed8);color:#fff;}
 .stream-tab-btn.active-pcb{background:var(--bio);color:#fff;}
 .stream-tab-btn.active-neet{background:var(--neet);color:#fff;}
+.stream-tab-btn.active-jee{background:var(--jee);color:#fff;}
 
 /* Ranking */
 #rank-scr{padding:0 0 40px;}
@@ -319,7 +322,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 #screenshot-warn h2{font-family:'Montserrat',sans-serif;font-size:28px;font-weight:700;color:#ff5252;margin-bottom:12px;}
 #screenshot-warn button{margin-top:22px;background:#1a237e;color:#fff;border:none;padding:12px 28px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Poppins',sans-serif;}
 
-/* ── Sync indicator ── */
+/* Admin sync bar */
 #admin-sync-bar{display:none;background:linear-gradient(90deg,#e8f5e9,#f1f8e9);border-bottom:2px solid #a5d6a7;padding:7px 20px;font-size:12px;color:#2e7d32;font-weight:600;text-align:center;}
 #admin-sync-bar.show{display:block;}
 
@@ -382,10 +385,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
   <button onclick="dismissScreenshotWarn()">I Understand — Continue</button>
 </div>
 
-<!-- Admin Sync Notification Bar -->
-<div id="admin-sync-bar">
-  ✅ Settings synced from Admin — Tests & configuration updated!
-</div>
+<div id="admin-sync-bar">✅ Settings synced from Admin — Tests & configuration updated!</div>
 
 <!-- LOGIN -->
 <div id="login-scr" style="display:none">
@@ -550,9 +550,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 
 <!-- RESULT -->
 <div class="scr" id="result-scr">
-  <div class="rhero" id="result-hero">
-    <h2>Test Completed! 🎉</h2>
-  </div>
+  <div class="rhero" id="result-hero"><h2>Test Completed! 🎉</h2></div>
   <div class="secres" id="secres"></div>
   <div class="arev">
     <h3>📋 Answer Review with Solutions</h3>
@@ -694,7 +692,7 @@ body{font-family:'Poppins',sans-serif;background:var(--bg);color:var(--txt);min-
 
 <script>
 // ══════════════════════════════════════════════
-// 🔧 CONFIG — single source of truth
+// 🔧 CONFIG
 // ══════════════════════════════════════════════
 const API = "https://backend-67yk.onrender.com";
 
@@ -715,51 +713,32 @@ async function fetchWithRetry(url, options={}, retries=4, delayMs=3000){
 }
 
 // ══════════════════════════════════════════════
-// ✅ ADMIN SYNC: Load settings pushed by admin
-// Admin's saveAll() calls /add-questions and stores
-// settings in localStorage as 'mhtcet_student_data'.
-// We read that here so Razorpay key, price, contact
-// etc. are always in sync with admin panel.
+// 🔒 FIX 1: Decryption — matches admin panel's XOR encryption
+// Admin encrypts mhtcet_student_data & mhtcet_admin_data
+// Student must decrypt before JSON.parse
 // ══════════════════════════════════════════════
-let settings = { duration:180, price:30, contact:{} };
+const _ENC_KEY = 'PX_' + (navigator.userAgent.length * 7).toString(36) + '_SEC';
 
-function loadAdminSettings(){
-  // Priority 1: mhtcet_student_data (written by admin panel's saveAll)
+function decryptData(enc){
   try{
-    const raw = localStorage.getItem('mhtcet_student_data');
-    if(raw){
-      let parsed;
-      try{ parsed = JSON.parse(raw); } catch(e){ return; }
-      if(parsed && parsed.settings){
-        const s = parsed.settings;
-        settings.duration = s.duration || s.pay_amount && 180 || 180;
-        settings.price    = s.price || s.pay_amount || 30;
-        settings.contact  = s.contact || {};
-        // Razorpay key sync
-        if(s.rzp_key_id) settings.rzp_key_id = s.rzp_key_id;
-        if(s.rzp_mode)   settings.rzp_mode   = s.rzp_mode;
-      }
+    const str = decodeURIComponent(escape(atob(enc)));
+    const key = _ENC_KEY;
+    let result = '';
+    for(let i=0;i<str.length;i++){
+      result += String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length));
     }
-  }catch(e){}
+    return result;
+  }catch(e){ try{ return atob(enc); }catch(e2){ return enc; } }
+}
 
-  // Priority 2: Razorpay admin config (richer, saved separately by admin)
+// Safe JSON parse — tries decrypted first, then plain
+function safeParseLS(key){
   try{
-    const rzp = JSON.parse(localStorage.getItem('rzp_admin_config')||'{}');
-    if(rzp.keyId && rzp.keyId.startsWith('rzp_')){
-      settings.rzp_key_id = rzp.keyId;
-      settings.rzp_mode   = rzp.mode || 'test';
-      if(rzp.amount) settings.price = rzp.amount;
-    }
-  }catch(e){}
-
-  // Show sync bar if admin data is present
-  try{
-    const adminData = localStorage.getItem('mhtcet_admin_data');
-    if(adminData){
-      const bar = document.getElementById('admin-sync-bar');
-      if(bar){ bar.classList.add('show'); setTimeout(()=>bar.classList.remove('show'),5000); }
-    }
-  }catch(e){}
+    const raw = localStorage.getItem(key);
+    if(!raw) return null;
+    try{ return JSON.parse(decryptData(raw)); }
+    catch(e){ return JSON.parse(raw); }
+  }catch(e){ return null; }
 }
 
 // ══════════════════════════════════════════════
@@ -791,57 +770,141 @@ let tests=[], curTest=null, curSec=0, curQ=0, timerInt=null, timeLeft=0, pending
 let curStream='pcm', currentUser=null, examState={};
 
 // ══════════════════════════════════════════════
-// LOAD TESTS (from backend — admin pushes via saveAll)
+// FIX 2: Settings — now includes rzp_key_id & rzp_mode defaults
+// ══════════════════════════════════════════════
+let settings = { duration:180, price:30, rzp_key_id:'', rzp_mode:'test', contact:{} };
+
+// ══════════════════════════════════════════════
+// FIX 3: loadAdminSettings — decrypt support + fixed duration bug
+// + reads from ALL admin localStorage sources in priority order
+// + caches synced tests for offline fallback
+// ══════════════════════════════════════════════
+function loadAdminSettings(){
+  // Priority 1: mhtcet_student_data — admin's saveAll() writes this
+  // Admin encrypts it via overridden saveAll, so we decrypt first
+  const studentData = safeParseLS('mhtcet_student_data');
+  if(studentData){
+    if(studentData.settings){
+      const s = studentData.settings;
+      // FIX: was "s.duration || s.pay_amount && 180 || 180" — operator precedence bug
+      settings.duration  = (typeof s.duration === 'number' && s.duration > 0) ? s.duration : 180;
+      settings.price     = s.price || s.pay_amount || 30;
+      settings.contact   = s.contact || {};
+      if(s.rzp_key_id && s.rzp_key_id.startsWith('rzp_')) settings.rzp_key_id = s.rzp_key_id;
+      if(s.rzp_mode)   settings.rzp_mode = s.rzp_mode;
+    }
+    // FIX: Cache admin tests for offline fallback
+    if(studentData.tests && studentData.tests.length){
+      window._adminSyncedTests = studentData.tests;
+    }
+  }
+
+  // Priority 2: mhtcet_admin_data — also try this (same device = same encryption key)
+  // Fills any gaps if student_data was missing fields
+  const adminData = safeParseLS('mhtcet_admin_data');
+  if(adminData){
+    if(adminData.settings){
+      const s = adminData.settings;
+      if(!settings.rzp_key_id && s.rzp_key_id && s.rzp_key_id.startsWith('rzp_'))
+        settings.rzp_key_id = s.rzp_key_id;
+      if(settings.rzp_mode === 'test' && s.rzp_mode) settings.rzp_mode = s.rzp_mode;
+      if(settings.price === 30 && (s.price || s.pay_amount))
+        settings.price = s.price || s.pay_amount || 30;
+      if(settings.duration === 180 && s.duration > 0) settings.duration = s.duration;
+      if(!settings.contact || !Object.keys(settings.contact).length)
+        settings.contact = s.contact || {};
+    }
+    // Fallback test cache
+    if(adminData.tests && adminData.tests.length && !window._adminSyncedTests){
+      window._adminSyncedTests = adminData.tests;
+    }
+  }
+
+  // Priority 3: rzp_admin_config — richest Razorpay source, saved by admin settings page
+  try{
+    const rzp = JSON.parse(localStorage.getItem('rzp_admin_config')||'{}');
+    if(rzp.keyId && rzp.keyId.startsWith('rzp_')){
+      settings.rzp_key_id = rzp.keyId;  // highest priority for Razorpay
+      settings.rzp_mode   = rzp.mode || 'test';
+      if(rzp.amount) settings.price = rzp.amount;
+    }
+  }catch(e){}
+
+  // Show sync bar if admin has pushed any data
+  try{
+    if(localStorage.getItem('mhtcet_admin_data') || localStorage.getItem('mhtcet_student_data')){
+      const bar = document.getElementById('admin-sync-bar');
+      if(bar){ bar.classList.add('show'); setTimeout(()=>bar.classList.remove('show'),5000); }
+    }
+  }catch(e){}
+}
+
+// ══════════════════════════════════════════════
+// FIX 4: loadTests — augments backend tests with local topics/qbank
+// Better offline fallback using window._adminSyncedTests
 // ══════════════════════════════════════════════
 async function loadTests(){
   try{
     const r = await fetchWithRetry(API+'/tests');
     tests = await r.json();
-    await reVerifyUnlock();
 
-    // Also fetch settings from backend if available
+    // FIX: Augment backend tests with local topics & qbank (for offline fallback)
+    if(window._adminSyncedTests && window._adminSyncedTests.length){
+      tests = tests.map(t=>{
+        const local = window._adminSyncedTests.find(lt=>String(lt.id)===String(t.id));
+        if(local){
+          // Attach local qbank as fallback if server exam endpoint fails
+          if(local.qbank) t._localQbank = local.qbank;
+          // Use admin topics if backend doesn't return them
+          if(!t.topics && local.topics) t.topics = local.topics;
+          // Use admin duration if backend doesn't set it
+          if(!t.duration && local.duration) t.duration = local.duration;
+        }
+        return t;
+      });
+    }
+
+    // Fetch backend settings if available
     try{
       const sr = await fetch(API+'/settings');
       if(sr.ok){
         const sd = await sr.json();
         if(sd){
-          if(sd.price)       settings.price       = sd.price;
-          if(sd.duration)    settings.duration    = sd.duration;
-          if(sd.contact)     settings.contact     = sd.contact;
-          if(sd.rzp_key_id)  settings.rzp_key_id  = sd.rzp_key_id;
-          if(sd.rzp_mode)    settings.rzp_mode    = sd.rzp_mode;
+          if(sd.price)      settings.price      = sd.price;
+          if(sd.duration)   settings.duration   = sd.duration;
+          if(sd.contact)    settings.contact    = sd.contact;
+          if(sd.rzp_key_id && sd.rzp_key_id.startsWith('rzp_')) settings.rzp_key_id = sd.rzp_key_id;
+          if(sd.rzp_mode)   settings.rzp_mode   = sd.rzp_mode;
         }
       }
     }catch(e){/* settings endpoint optional */}
 
+    await reVerifyUnlock();
     renderHero(); renderSubStrip(); renderHome();
   }catch(e){
-    // Fallback: try to render from admin-synced localStorage tests
-    try{
-      const raw = localStorage.getItem('mhtcet_student_data');
-      if(raw){
-        const parsed = JSON.parse(raw);
-        if(parsed.tests && parsed.tests.length){
-          // Convert admin test format → student test format (strip answers)
-          tests = parsed.tests.map(t=>({
-            id: String(t.id ?? t._id ?? Math.random()),
-            name: t.name,
-            desc: t.desc || '',
-            stream: t.stream || 'pcm',
-            free: !!t.free,
-            active: t.active !== false,
-            duration: t.duration || settings.duration || 180,
-            topics: t.topics || {},
-            totalQ: Object.values(t.qbank||{}).reduce((a,arr)=>a+(arr?.length||0),0),
-            unlocked: false,
-            _localQbank: t.qbank  // keep for local exam (no server)
-          })).filter(t=>t.active);
-          toast('📦 Loaded tests from admin sync (offline mode)');
-        }
-      }
-    }catch(le){}
+    // FIX: Robust offline fallback from admin-synced localStorage
+    if(window._adminSyncedTests && window._adminSyncedTests.length){
+      tests = window._adminSyncedTests
+        .filter(t => t.active !== false)
+        .map(t=>({
+          id: String(t.id ?? t._id ?? Math.random()),
+          name: t.name,
+          desc: t.desc || '',
+          stream: t.stream || 'pcm',
+          free: !!t.free,
+          active: true,
+          duration: t.duration || settings.duration || 180,
+          topics: t.topics || {},
+          totalQ: Object.values(t.qbank||{}).reduce((a,arr)=>a+(arr?.length||0),0),
+          unlocked: false,
+          _localQbank: t.qbank  // FIX: preserve full qbank for exam fallback
+        }))
+        .filter(t => t.totalQ > 0);  // only show tests that have questions
+      toast('📦 Offline mode — loaded from admin sync');
+    } else {
+      toast('⚠ Could not load tests. Check your connection.');
+    }
     renderHero(); renderSubStrip(); renderHome();
-    if(!tests.length) toast('⚠ Could not load tests. Check your connection.');
   }
 }
 
@@ -867,7 +930,7 @@ function setStream(s){
   curStream=s;
   document.querySelectorAll('.stream-tab-btn').forEach(b=>b.className='stream-tab-btn');
   const sBtn=document.getElementById('stream-'+s+'-btn');
-  if(sBtn) sBtn.className='stream-tab-btn active-'+(s==='jee'?'neet':s);
+  if(sBtn) sBtn.className='stream-tab-btn active-'+s;
   renderSubStrip(); renderHero(); renderHome();
 }
 
@@ -918,7 +981,8 @@ function renderSubStrip(){
 }
 
 // ══════════════════════════════════════════════
-// HOME CARDS — reads topics & settings from admin sync
+// FIX 5: makeTestCard — reads synced price + topics correctly
+// Unlock check works for both backend-loaded and locally-loaded tests
 // ══════════════════════════════════════════════
 function renderHome(){
   const fg=document.getElementById('free-grid'), pg=document.getElementById('paid-grid');
@@ -935,8 +999,21 @@ function renderHome(){
 function makeTestCard(t){
   const isNEET=t.stream==='neet', isJEE=t.stream==='jee';
   const marksLabel=isNEET?'720 marks · +4/−1':isJEE?'360 marks · +4/−1':'200 marks';
+
+  // FIX: Use synced price from settings (admin-set)
+  const displayPrice = settings.price || 30;
+
+  // FIX: totalQ may need computing from _localQbank for offline mode
+  const totalQ = t.totalQ || (t._localQbank
+    ? Object.values(t._localQbank).reduce((a,arr)=>a+(arr?.length||0),0)
+    : 0);
+
+  // FIX: unlock check — also check if user is marked as paid in local users
+  const isUnlocked = t.free || t.unlocked || (currentUser && currentUser.paid);
+
   const card=document.createElement('div');
-  card.className='tcard'+(isNEET||isJEE?' neet-card':'')+(!t.free&&!t.unlocked?' locked':'');
+  card.className='tcard'+(isNEET||isJEE?' neet-card':'')+(!isUnlocked?' locked':'');
+
   const topics=t.topics||{};
   const thirdLbl=isNEET?'Bio':(t.stream==='pcb'?'Bio':'Maths');
   const topicsHtml=(topics.phy||topics.che||topics.third)?
@@ -945,22 +1022,21 @@ function makeTestCard(t){
       ${topics.che?`<div><span style="font-weight:700;color:var(--che)">Chem:</span> ${escHtml(topics.che)}</div>`:''}
       ${topics.third?`<div><span style="font-weight:700;color:var(--neet)">${thirdLbl}:</span> ${escHtml(topics.third)}</div>`:''}
     </div>`:'' ;
-  // Use admin-synced price
-  const displayPrice = settings.price || 30;
+
   card.innerHTML=`
     <span class="tbadge ${t.free?'free':'paid'}${isNEET||isJEE?' neet-badge':''}">${t.free?'FREE':'PAID'}${isNEET?' · NEET':isJEE?' · JEE':''}</span>
     <h3>${escHtml(t.name)}</h3>
     <p>${escHtml(t.desc||'')}</p>
     ${topicsHtml}
     <div class="tmeta">
-      <span>📋 ${t.totalQ||'—'} Q</span>
+      <span>📋 ${totalQ||'—'} Q</span>
       <span>⏱ ${t.duration||settings.duration||180} min</span>
       <span>🏆 ${marksLabel}</span>
       ${isNEET||isJEE?'<span style="color:var(--err);font-weight:700">⚠ −1 Neg</span>':''}
     </div>
-    ${(!t.free&&!t.unlocked)
+    ${!isUnlocked
       ?`<button class="btn ${isNEET||isJEE?'btn-neet':'btn-acc'} btn-sm" style="width:100%;margin-top:12px" onclick="unlockTest('${t.id}')">🔒 Unlock — ₹${displayPrice}</button>`
-      :(t.totalQ>0)
+      :(totalQ>0)
         ?`<button class="btn ${isNEET||isJEE?'btn-neet':'btn-pri'} btn-sm" style="width:100%;margin-top:12px" onclick="openInst('${t.id}')">Start Test →</button>`
         :`<button class="btn btn-sm" style="width:100%;margin-top:12px;background:#f0f2f5;color:var(--muted);cursor:default" disabled>Coming Soon</button>`
     }`;
@@ -973,6 +1049,10 @@ function makeTestCard(t){
 function openInst(id){
   curTest = tests.find(t=>String(t.id)===String(id));
   if(!curTest){ toast('Test not found'); return; }
+  // FIX: compute totalQ from local if missing
+  if(!curTest.totalQ && curTest._localQbank){
+    curTest.totalQ = Object.values(curTest._localQbank).reduce((a,arr)=>a+(arr?.length||0),0);
+  }
   if(!curTest.totalQ){ toast('⚠ No questions yet. Check back later.'); return; }
   SUBS = getSubs(curTest.stream);
   const isNEET=curTest.stream==='neet', isJEE=curTest.stream==='jee';
@@ -986,7 +1066,7 @@ function openInst(id){
     <tr><th>Subject</th><th>Questions</th><th>Marks/Q</th>${isNEET||isJEE?'<th>Wrong</th>':''}<th>Total</th></tr>
     ${SUBS.map(s=>`<tr><td>${s.name}</td><td>${s.maxQ}</td><td style="color:var(--ok)">+${s.marks}</td>${isNEET||isJEE?`<td style="color:var(--err)">−${s.neg}</td>`:''}<td><strong>${s.maxQ*s.marks}</strong></td></tr>`).join('')}
     <tr style="background:#f8f9ff"><td><strong>Total</strong></td><td><strong>${totalQ}</strong></td><td>—</td>${isNEET||isJEE?'<td>—</td>':''}<td><strong>${SUBS.reduce((a,s)=>a+s.maxQ*s.marks,0)}</strong></td></tr>`;
-  // Use admin-synced duration
+  // FIX: Use admin-synced duration, fallback to settings
   document.getElementById('inst-duration').textContent=(curTest.duration||settings.duration||180)+' minutes';
   document.getElementById('inst-switch-line').textContent='Switch between '+SUBS.map(s=>s.name).join(', ')+' freely.';
   const sb=document.getElementById('start-btn');
@@ -995,12 +1075,21 @@ function openInst(id){
 }
 
 // ══════════════════════════════════════════════
-// EXAM START — loads from backend or local fallback
+// FIX 6: startExam — better local qbank fallback
+// Handles both backend-loaded tests and locally synced tests
 // ══════════════════════════════════════════════
 async function startExam(){
   if(!curTest){ toast('No test selected'); return; }
+
+  // FIX: compute totalQ from local qbank if backend test is missing it
+  if(!curTest.totalQ && curTest._localQbank){
+    curTest.totalQ = Object.values(curTest._localQbank).reduce((a,arr)=>a+(arr?.length||0),0);
+  }
+  if(!curTest.totalQ){ toast('⚠ No questions available.'); return; }
+
   document.getElementById('start-btn').textContent='Loading…';
   document.getElementById('start-btn').disabled=true;
+
   try{
     const headers = {'Content-Type':'application/json'};
     if(!curTest.free && currentUser){
@@ -1009,27 +1098,56 @@ async function startExam(){
     }
     const r = await fetchWithRetry(API+'/exam/'+curTest.id, {headers});
     const data = await r.json();
-    if(!data.questions || !data.questions.length) throw new Error('No questions');
+    if(!data.questions || !data.questions.length) throw new Error('No questions from server');
+
+    // FIX: Attach local solutions to server questions if server strips them
+    // (some backends strip _sol for anti-cheating; re-attach from local qbank)
+    if(curTest._localQbank){
+      const localFlat=[];
+      [0,1,2].forEach(s=>(curTest._localQbank[s]||[]).forEach((q,i)=>localFlat.push({...q,_s:s,_i:i})));
+      data.questions = data.questions.map(q=>{
+        if(!q._sol || !q.sol){
+          const s = Number(q.section||0);
+          const i = data.questions.filter(x=>Number(x.section||0)===s).indexOf(q);
+          const local = (curTest._localQbank[s]||[])[i];
+          if(local){ q._sol = local.sol || ''; q._ans = local.ans; }
+        }
+        return q;
+      });
+    }
     _buildExam(data.questions);
   }catch(e){
-    // Fallback: use local qbank if synced from admin
+    // FIX: Full offline fallback using local qbank
     if(curTest._localQbank){
-      toast('📦 Loading from local sync (offline mode)');
-      const questions=[];
-      [0,1,2].forEach(s=>{
-        (curTest._localQbank[s]||[]).forEach((q,i)=>{
-          questions.push({_id:`local-${s}-${i}`,q:q.q,opts:q.opts,isNumerical:!!q.isNumerical,img:q.img||'',section:s,_ans:q.ans,_sol:q.sol});
+      const hasQs = Object.values(curTest._localQbank).some(arr=>arr&&arr.length>0);
+      if(hasQs){
+        toast('📦 Loading from local sync (offline mode)');
+        const questions=[];
+        [0,1,2].forEach(s=>{
+          (curTest._localQbank[s]||[]).forEach((q,i)=>{
+            if(!q||!q.q) return;
+            questions.push({
+              _id:`local-${s}-${i}`,
+              q: q.q,
+              opts: q.opts||['','','',''],
+              isNumerical: !!q.isNumerical,
+              img: q.img||'',
+              section: s,
+              _ans: q.ans,       // kept for local grading
+              _sol: q.sol||''    // kept for result review
+            });
+          });
         });
-      });
-      if(questions.length){ _buildExam(questions, true); return; }
+        if(questions.length){
+          _buildExam(questions, true);
+          return;
+        }
+      }
     }
     toast('⚠ Could not load questions. Check connection and try again.');
     document.getElementById('start-btn').textContent='Begin Test →';
     document.getElementById('start-btn').disabled=false;
-    return;
   }
-  document.getElementById('start-btn').textContent='Begin Test →';
-  document.getElementById('start-btn').disabled=false;
 }
 
 function _buildExam(questions, localMode=false){
@@ -1042,9 +1160,8 @@ function _buildExam(questions, localMode=false){
     curTest.sections[sec].push({
       _id:q._id, q:q.q, opts:q.opts||[], isNumerical:q.isNumerical||false,
       img:q.img||'', status:'nv', chosen:null, numericalInput:'',
-      // local mode keeps answers for grading client-side
-      _ans: localMode ? q._ans : undefined,
-      _sol: localMode ? q._sol : undefined
+      _ans: q._ans,   // FIX: always preserve for local grading & solution display
+      _sol: q._sol || q.sol || ''
     });
   });
   curSec=0; curQ=0; blurCount=0;
@@ -1058,6 +1175,7 @@ function _buildExam(questions, localMode=false){
   document.getElementById('sub-btn').style.display='inline-flex';
   document.getElementById('home-btn').style.display='none';
   document.getElementById('neet-neg-hint').style.display=(curTest.stream==='neet'||curTest.stream==='jee')?'flex':'none';
+  // FIX: use admin-synced duration
   timeLeft=(curTest.duration||settings.duration||180)*60;
   updateTimer();
   timerInt=setInterval(()=>{ timeLeft--; if(timeLeft<=0){clearInterval(timerInt);submitTest();return;} updateTimer(); },1000);
@@ -1227,7 +1345,7 @@ async function submitTest(){
   showScr('result-scr');
   document.getElementById('result-hero').innerHTML=`<div style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">⏳</div><div style="font-family:'Montserrat',sans-serif;font-size:18px;font-weight:700;color:#fff">Grading your answers…</div></div>`;
 
-  // If local mode (offline fallback), grade client-side
+  // Local mode skips server submission
   if(curTest._localMode){
     _gradeLocally(answers);
     return;
@@ -1242,12 +1360,17 @@ async function submitTest(){
     if(!data.success) throw new Error(data.error||'Server error');
     showResults(data.result, data.review);
   }catch(e){
-    toast('⚠ Could not submit to server. Grading locally…');
+    // FIX: Always fall back to local grading if server fails
+    // _ans fields are preserved on all question objects now
+    toast('⚠ Server grading failed. Grading locally…');
     _gradeLocally(answers);
   }
 }
 
-// Client-side grading for offline/fallback mode
+// ══════════════════════════════════════════════
+// FIX 7: _gradeLocally — uses _ans preserved from both modes
+// Works for both localMode and server-fallback
+// ══════════════════════════════════════════════
 function _gradeLocally(answers){
   const isNEET=curTest.stream==='neet', isJEE=curTest.stream==='jee';
   let score=0,correct=0,wrong=0,skipped=0,deducted=0;
@@ -1265,13 +1388,15 @@ function _gradeLocally(answers){
           status='correct'; mark=sub.marks; score+=mark; correct++;
         } else if(givenNum!==null){ status='wrong'; wrong++; }
         else{ skipped++; }
-        review.push({section:s,index:i,q:q.q,opts:q.opts,img:q.img,isNumerical:true,ans:q._ans,numericalAns:q._ans,given:givenNum,status,mark,sol:q._sol||''});
+        review.push({section:s,index:i,q:q.q,opts:q.opts,img:q.img,isNumerical:true,
+          ans:q._ans,numericalAns:q._ans,given:givenNum,status,mark,sol:q._sol||''});
       } else {
         if(given!==null&&given!==undefined){
           if(given===q._ans){ status='correct'; mark=sub.marks; score+=mark; correct++; }
           else{ status='wrong'; wrong++; if(isNEET||isJEE){mark=-sub.neg;score+=mark;deducted+=sub.neg;} }
         } else { skipped++; }
-        review.push({section:s,index:i,q:q.q,opts:q.opts,img:q.img,isNumerical:false,ans:q._ans,given:given??null,status,mark,sol:q._sol||''});
+        review.push({section:s,index:i,q:q.q,opts:q.opts,img:q.img,isNumerical:false,
+          ans:q._ans,given:given??null,status,mark,sol:q._sol||''});
       }
     });
   });
@@ -1340,26 +1465,35 @@ function showResults(result, review){
 }
 
 // ══════════════════════════════════════════════
-// PAYMENT — uses admin-synced Razorpay key
+// FIX 8: getRzpKeyId — unified key lookup
+// Checks all 3 admin sync sources in correct priority
 // ══════════════════════════════════════════════
 function getRzpKeyId(){
-  // 1. Admin-synced via settings object (loaded from localStorage + backend)
+  // 1. In-memory settings object (highest priority — set by loadAdminSettings)
   if(settings.rzp_key_id && settings.rzp_key_id.startsWith('rzp_')) return settings.rzp_key_id;
-  // 2. Direct rzp_admin_config key (admin panel writes this)
+  // 2. rzp_admin_config key (admin settings page writes this separately)
   try{
     const cfg=JSON.parse(localStorage.getItem('rzp_admin_config')||'{}');
     if(cfg.keyId && cfg.keyId.startsWith('rzp_')) return cfg.keyId;
   }catch(e){}
-  // 3. mhtcet_student_data settings
+  // 3. mhtcet_student_data (try decrypted + plain)
   try{
-    const sd=JSON.parse(localStorage.getItem('mhtcet_student_data')||'{}');
-    if(sd.settings?.rzp_key_id&&sd.settings.rzp_key_id.startsWith('rzp_')) return sd.settings.rzp_key_id;
+    const sd = safeParseLS('mhtcet_student_data');
+    if(sd?.settings?.rzp_key_id && sd.settings.rzp_key_id.startsWith('rzp_'))
+      return sd.settings.rzp_key_id;
+  }catch(e){}
+  // 4. mhtcet_admin_data
+  try{
+    const ad = safeParseLS('mhtcet_admin_data');
+    if(ad?.settings?.rzp_key_id && ad.settings.rzp_key_id.startsWith('rzp_'))
+      return ad.settings.rzp_key_id;
   }catch(e){}
   return '';
 }
 
 function unlockTest(id){
   pendingPaid=id;
+  // FIX: Use synced price from settings
   document.getElementById('pay-amount').textContent=settings.price||30;
   document.getElementById('pay-processing').style.display='none';
   document.getElementById('pay-success-msg').style.display='none';
@@ -1374,6 +1508,7 @@ function unlockTest(id){
 function startRazorpayPayment(){
   const rzpKey=getRzpKeyId();
   if(!rzpKey||rzpKey.length<10){ toast('⚠ Payment not configured. Contact admin.'); return; }
+  // FIX: Use synced price from settings
   const amountPaise=Math.round((parseFloat(settings.price)||30)*100);
   const options={
     key:rzpKey, amount:amountPaise, currency:'INR',
@@ -1512,8 +1647,8 @@ function enterApp(){
   document.getElementById('main-hdr').style.display='flex';
   document.querySelectorAll('.scr').forEach(s=>s.style.display='');
   if(currentUser) document.getElementById('hdr-user').textContent='👤 '+currentUser.name.split(' ')[0];
-  loadAdminSettings();   // ← Load admin-synced settings FIRST
-  loadTests();           // ← Then load tests from backend
+  loadAdminSettings();  // FIX: ALWAYS load settings before tests
+  loadTests();
   showScr('hs');
 }
 
@@ -1542,7 +1677,7 @@ async function renderRanking(){
   try{
     const r=await fetchWithRetry(API+'/results');
     let rows=await r.json();
-    if(streamFilter!=='all') rows=rows.filter(r=>r.type===streamFilter.toUpperCase());
+    if(streamFilter!=='all') rows=rows.filter(r=>(r.type||'').toUpperCase()===streamFilter.toUpperCase());
     if(testFilter!=='all') rows=rows.filter(r=>r.testName===testFilter);
     rows.sort((a,b)=>b.score-a.score);
     if(!rows.length){list.innerHTML='<div class="empty-rank">🏆 No scores yet.</div>';document.getElementById('my-rank-card').style.display='none';return;}
@@ -1560,7 +1695,7 @@ async function renderRanking(){
     rows.slice(0,50).forEach((r,i)=>{
       const isMe=currentUser&&r.name===currentUser.name;
       const rankDisp=i<3?`<span class="rank-badge rank-${i+1}">${medals[i]}</span>`:`<span class="rank-badge rank-n">${i+1}</span>`;
-      html+=`<tr class="${isMe?'my-rank-row':''}"><td>${rankDisp}</td><td><strong>${r.name}</strong>${isMe?' <span style="background:#c8e6c9;color:#1b5e20;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">YOU</span>':''}</td><td style="font-size:12px;color:var(--muted)">${r.type||'—'}</td><td><strong style="color:var(--ok)">${r.score}</strong>/${r.total}</td><td style="font-size:12px;color:var(--muted)">${r.date||''}</td></tr>`;
+      html+=`<tr class="${isMe?'my-rank-row':''}"><td>${rankDisp}</td><td><strong>${escHtml(r.name)}</strong>${isMe?' <span style="background:#c8e6c9;color:#1b5e20;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">YOU</span>':''}</td><td style="font-size:12px;color:var(--muted)">${r.type||'—'}</td><td><strong style="color:var(--ok)">${r.score}</strong>/${r.total}</td><td style="font-size:12px;color:var(--muted)">${r.date||''}</td></tr>`;
     });
     html+=`</tbody></table>`;
     list.innerHTML=html;
@@ -1638,19 +1773,31 @@ function sdRenderLeaderboard(type){
     const isMe=sdCurrentStudent&&s.name===sdCurrentStudent.name&&(s.type||'').toUpperCase()===(sdCurrentStudent.type||'').toUpperCase();
     const rc=rank===1?'sdr1':rank===2?'sdr2':rank===3?'sdr3':'sdrn';
     const medal=rank===1?'🥇 ':rank===2?'🥈 ':rank===3?'🥉 ':'';
-    return `<tr class="${isMe?'me':''}"><td><span class="sd-rbadge ${rc}">${rank}</span></td><td>${medal}${s.name||'Unknown'}${isMe?'<span class="sd-you">YOU</span>':''}</td><td><strong>${s.score}/${s.total}</strong><div class="sd-pbar"><div class="sd-pfill" style="width:${pct}%"></div></div></td><td>${pct}%</td><td style="font-size:11px;color:#9ca3af">${s.date||'—'}</td></tr>`;
+    return `<tr class="${isMe?'me':''}"><td><span class="sd-rbadge ${rc}">${rank}</span></td><td>${medal}${escHtml(s.name||'Unknown')}${isMe?'<span class="sd-you">YOU</span>':''}</td><td><strong>${s.score}/${s.total}</strong><div class="sd-pbar"><div class="sd-pfill" style="width:${pct}%"></div></div></td><td>${pct}%</td><td style="font-size:11px;color:#9ca3af">${s.date||'—'}</td></tr>`;
   }).join('');
   el.innerHTML=`<table class="sd-table"><thead><tr><th>Rank</th><th>Name</th><th>Score</th><th>%</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`;
   setTimeout(()=>{const hl=el.querySelector('.me');if(hl)hl.scrollIntoView({behavior:'smooth',block:'center'});},100);
 }
 
 // ══════════════════════════════════════════════
-// CONTACT — uses admin-synced contact settings
+// FIX 9: showContactUs — always re-reads fresh settings
+// Now checks all 3 sources (settings obj, student_data, admin_data)
 // ══════════════════════════════════════════════
 function showContactUs(){
-  // Always re-read settings in case admin updated
+  // Always refresh settings before rendering contact page
   loadAdminSettings();
-  const contact=settings.contact||{};
+
+  // FIX: Also try to read contact directly from localStorage if settings.contact is empty
+  let contact = settings.contact || {};
+  if(!contact.wa && !contact.tg){
+    const sd = safeParseLS('mhtcet_student_data');
+    if(sd?.settings?.contact) contact = sd.settings.contact;
+  }
+  if(!contact.wa && !contact.tg){
+    const ad = safeParseLS('mhtcet_admin_data');
+    if(ad?.settings?.contact) contact = ad.settings.contact;
+  }
+
   const wa=(contact.wa||'').trim(), tg=(contact.tg||'').trim();
   const waMsg=encodeURIComponent((contact.waMsg||'Hi, I need help with PrepXpert').trim());
   document.getElementById('contact-heading-title').textContent='💬 '+(contact.heading||'Need Help? Contact Us!');
@@ -1713,8 +1860,10 @@ function switchLoginTab(tab){
 function showLErr(msg){const el=document.getElementById('lerr');el.textContent=msg;el.style.display='block';}
 
 // ══════════════════════════════════════════════
-// BOOT
+// BOOT — FIX 10: loadAdminSettings called before enterApp
+// Ensures settings are ready even before user logs in
 // ══════════════════════════════════════════════
+loadAdminSettings(); // Pre-load settings immediately on page load
 const _savedUser=localStorage.getItem('mhtcet_current_user');
 if(_savedUser){try{currentUser=JSON.parse(_savedUser);enterApp();}catch(e){showLoginScreen();}}
 else{showLoginScreen();}
